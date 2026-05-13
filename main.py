@@ -92,7 +92,7 @@ if st.button("🚀 400위까지 정밀 수색 시작"):
                 for col, item in zip(cols, row_items):
                     with col:
                         if item["썸네일"]:
-                            st.image(item["썸네일"], use_container_width=True)
+                            st.image(item["썸네일"], use_container_width=100)
                         else:
                             st.markdown(
                                 "<div style='height:150px; background:#f0f0f0;"
