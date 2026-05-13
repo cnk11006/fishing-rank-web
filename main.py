@@ -85,7 +85,7 @@ if not st.session_state['authenticated']:
 
 # --- [4. 메인 화면] ---
 st.set_page_config(page_title="피싱템 순위 추적기", layout="wide")
-st.title("🎣 피싱템 순위 레이더 (400위 확장판)")
+st.title("🎣 피싱템 순위 레이더")
 
 # 구글 시트 바로가기 버튼
 st.link_button(
@@ -100,7 +100,7 @@ tab1, tab2 = st.tabs(["🔍 순위 수색", "📈 순위 변동 그래프"])
 # TAB 1 - 순위 수색
 # =============================================
 with tab1:
-    keyword = st.text_input("수색할 키워드를 입력하세요 (예: 타이라바 로드)")
+    keyword = st.text_input("수색할 키워드를 입력하세요 (예: 왕눈이에기)")
 
     if st.button("🚀 400위까지 정밀 수색 시작"):
         if not keyword:
