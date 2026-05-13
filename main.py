@@ -1,5 +1,4 @@
 import streamlit as st
-import pandas as pd
 import requests
 import time
 
@@ -41,54 +40,68 @@ if st.button("🚀 400위까지 정밀 수색 시작"):
     else:
         found_items = []
         progress_text = st.empty()
-        
-        # 100개씩 4번 호출하여 400위까지 수집
+
         for page in range(4):
             start_num = (page * 100) + 1
             progress_text.info(f"🛰️ {start_num}위 ~ {start_num + 99}위 구간 수색 중...")
-            
+
             url = f"https://openapi.naver.com/v1/search/shop.json?query={keyword}&display=100&start={start_num}"
             headers = {
                 "X-Naver-Client-Id": CLIENT_ID,
                 "X-Naver-Client-Secret": CLIENT_SECRET
             }
-            
+
             response = requests.get(url, headers=headers)
-            
+
             if response.status_code == 200:
                 items = response.json().get('items', [])
-                if not items: # 더 이상 가져올 상품이 없으면 중단
+                if not items:
                     break
-                    
+
                 for index, item in enumerate(items):
                     mall_name = item.get('mallName', '')
-                    # 상호명 또는 상품명에 '피싱템'이 포함된 경우 수집
                     if TARGET_STORE in mall_name or TARGET_STORE in item['title']:
                         clean_title = item['title'].replace('<b>', '').replace('</b>', '')
                         found_items.append({
                             "순위": start_num + index,
                             "상품명": clean_title,
                             "판매처": mall_name,
-                            "링크": item['link']
+                            "링크": item.get('link', ''),
+                            "썸네일": item.get('image', '')  # ✅ 썸네일 URL
                         })
-                
-                # API 과부하 방지를 위한 아주 짧은 휴식
+
                 time.sleep(0.1)
             else:
                 st.error(f"API 호출 오류 (구간: {start_num}위)")
                 break
 
-        progress_text.empty() # 진행 상태 메시지 삭제
+        progress_text.empty()
 
-        # 결과 발표
+        # --- [4. 결과 출력 - 카드형 레이아웃] ---
         if not found_items:
             st.error(f"⚠️ 현재 '{TARGET_STORE}' 상품이 400위 내에 비노출 중입니다.")
         else:
             st.success(f"✅ 400위 내에서 총 {len(found_items)}개의 상품을 발견했습니다!")
-            
-            # 클릭 가능한 마크다운 테이블 생성
-            md_table = "| 순위 | 상품명 (클릭 시 이동) | 판매처 |\n| :--- | :--- | :--- |\n"
-            for item in found_items:
-                md_table += f"| **{item['순위']}위** | [{item['상품명']}]({item['링크']}) | {item['판매처']} |\n"
-            
-            st.markdown(md_table)
+            st.divider()
+
+            COLS_PER_ROW = 3
+
+            for row_start in range(0, len(found_items), COLS_PER_ROW):
+                row_items = found_items[row_start: row_start + COLS_PER_ROW]
+                cols = st.columns(COLS_PER_ROW)
+
+                for col, item in zip(cols, row_items):
+                    with col:
+                        if item["썸네일"]:
+                            st.image(item["썸네일"], use_container_width=True)
+                        else:
+                            st.markdown(
+                                "<div style='height:150px; background:#f0f0f0;"
+                                "display:flex; align-items:center; justify-content:center;"
+                                "border-radius:8px; color:#999;'>이미지 없음</div>",
+                                unsafe_allow_html=True
+                            )
+                        st.markdown(f"### 🏆 {item['순위']}위")
+                        st.markdown(f"**[{item['상품명']}]({item['링크']})**")
+                        st.caption(f"🏪 판매처: {item['판매처']}")
+                        st.markdown("---")
