@@ -37,14 +37,11 @@ def save_to_sheet(keyword, found_items):
     try:
         sh = get_google_sheet()
         today = datetime.now().strftime("%Y-%m-%d %H:%M")
-
-        # 키워드별 시트 자동 생성
         try:
             worksheet = sh.worksheet(keyword)
         except:
             worksheet = sh.add_worksheet(title=keyword, rows=1000, cols=10)
             worksheet.append_row(["날짜", "순위", "상품명", "판매처", "가격", "링크"])
-
         for item in found_items:
             worksheet.append_row([
                 today,
@@ -89,6 +86,12 @@ if not st.session_state['authenticated']:
 # --- [4. 메인 화면] ---
 st.set_page_config(page_title="피싱템 순위 추적기", layout="wide")
 st.title("🎣 피싱템 순위 레이더 (400위 확장판)")
+
+# 구글 시트 바로가기 버튼
+st.link_button(
+    "📊 구글 시트에서 순위 기록 보기",
+    f"https://docs.google.com/spreadsheets/d/{SHEET_ID}",
+)
 
 # 탭 구성
 tab1, tab2 = st.tabs(["🔍 순위 수색", "📈 순위 변동 그래프"])
@@ -285,7 +288,6 @@ with tab2:
             if not data:
                 st.warning(f"'{graph_keyword}' 키워드의 저장된 데이터가 없습니다. 먼저 순위 수색을 해주세요!")
             else:
-                # 상품별로 그룹화
                 products = {}
                 for row in data:
                     name = row.get("상품명", "")[:20]
@@ -296,7 +298,6 @@ with tab2:
                     products[name]["dates"].append(date)
                     products[name]["ranks"].append(rank)
 
-                # Plotly 그래프 생성
                 fig = go.Figure()
                 for name, values in products.items():
                     fig.add_trace(go.Scatter(
@@ -312,7 +313,7 @@ with tab2:
                     title=f"'{graph_keyword}' 키워드 순위 변동 추이",
                     xaxis_title="날짜",
                     yaxis_title="순위",
-                    yaxis=dict(autorange="reversed"),  # 1위가 위로
+                    yaxis=dict(autorange="reversed"),
                     height=500,
                     hovermode="x unified",
                     legend=dict(orientation="h", yanchor="bottom", y=-0.3)
