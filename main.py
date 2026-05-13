@@ -39,6 +39,7 @@ if st.button("🚀 400위까지 정밀 수색 시작"):
         st.warning("키워드를 입력해주세요.")
     else:
         found_items = []
+        price_list = []  # 1~100위 가격 수집용
         progress_text = st.empty()
 
         for page in range(4):
@@ -60,6 +61,17 @@ if st.button("🚀 400위까지 정밀 수색 시작"):
 
                 for index, item in enumerate(items):
                     mall_name = item.get('mallName', '')
+
+                    # ✅ 1~100위 가격 데이터 수집
+                    if page == 0:
+                        try:
+                            price = int(item.get('lprice', 0))
+                            if price > 0:
+                                price_list.append(price)
+                        except:
+                            pass
+
+                    # ✅ 자사 상품 순위 수집
                     if TARGET_STORE in mall_name or TARGET_STORE in item['title']:
                         clean_title = item['title'].replace('<b>', '').replace('</b>', '')
                         found_items.append({
@@ -67,7 +79,8 @@ if st.button("🚀 400위까지 정밀 수색 시작"):
                             "상품명": clean_title,
                             "판매처": mall_name,
                             "링크": item.get('link', ''),
-                            "썸네일": item.get('image', '')
+                            "썸네일": item.get('image', ''),
+                            "가격": int(item.get('lprice', 0))
                         })
 
                 time.sleep(0.1)
@@ -77,6 +90,20 @@ if st.button("🚀 400위까지 정밀 수색 시작"):
 
         progress_text.empty()
 
+        # --- [4. 가격 분석 결과 출력] ---
+        if price_list:
+            min_price = min(price_list)
+            max_price = max(price_list)
+            avg_price = int(sum(price_list) / len(price_list))
+
+            st.subheader("💰 키워드 시장 가격 분석 (1위 ~ 100위 기준)")
+            col1, col2, col3 = st.columns(3)
+            col1.metric("최저가", f"{min_price:,}원")
+            col2.metric("평균 판매가", f"{avg_price:,}원")
+            col3.metric("최고가", f"{max_price:,}원")
+            st.divider()
+
+        # --- [5. 자사 상품 순위 결과 출력] ---
         if not found_items:
             st.error(f"⚠️ 현재 '{TARGET_STORE}' 상품이 400위 내에 비노출 중입니다.")
         else:
@@ -92,7 +119,7 @@ if st.button("🚀 400위까지 정밀 수색 시작"):
                 for col, item in zip(cols, row_items):
                     with col:
                         if item["썸네일"]:
-                            st.image(item["썸네일"],width=100)
+                            st.image(item["썸네일"], width=150)
                         else:
                             st.markdown(
                                 "<div style='height:150px; background:#f0f0f0;"
@@ -103,4 +130,6 @@ if st.button("🚀 400위까지 정밀 수색 시작"):
                         st.markdown(f"### 🏆 {item['순위']}위")
                         st.markdown(f"**[{item['상품명']}]({item['링크']})**")
                         st.caption(f"🏪 판매처: {item['판매처']}")
+                        if item["가격"] > 0:
+                            st.caption(f"💴 판매가: {item['가격']:,}원")
                         st.markdown("---")
