@@ -1,6 +1,8 @@
 import streamlit as st
 import requests
 import time
+import subprocess
+subprocess.run(["pip", "install", "gspread"], check=True)
 import gspread
 from google.oauth2.service_account import Credentials
 import plotly.graph_objects as go
