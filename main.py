@@ -55,7 +55,6 @@ def get_or_create_worksheet(sh, title, rows=1000, cols=10):
     except gspread.exceptions.WorksheetNotFound:
         return sh.add_worksheet(title=title, rows=rows, cols=cols)
 
-
 def save_to_sheet(keyword, found_items):
     try:
         sh = get_google_sheet()
