@@ -91,20 +91,64 @@ def save_to_sheet(keyword, found_items):
 # =============================================
 MONITOR_SHEET_NAME = "📋 모니터링 목록"
 
-def load_monitor_keywords(sh=None):
+def load_from_sheet(keyword, sh=None):
     try:
         if sh is None:
             sh = get_google_sheet()
-        worksheet = get_or_create_worksheet(sh, MONITOR_SHEET_NAME, rows=500, cols=3)
-        existing = worksheet.get_all_values()
-        if not existing or existing[0] != ["키워드", "등록일", "메모"]:
-            worksheet.clear()
-            worksheet.append_row(["키워드", "등록일", "메모"])
+        try:
+            worksheet = sh.worksheet(keyword)
+            all_values = worksheet.get_all_values()
+
+            if not all_values:
+                return []
+
+            first_row = all_values[0]
+
+            # 헤더 행 여부 확인
+            has_header = any(
+                cell in ["날짜", "순위", "상품명"] for cell in first_row
+            )
+
+            if has_header:
+                header = first_row
+                data_rows = all_values[1:]
+            else:
+                data_rows = all_values
+                col_count = len(first_row)
+                if col_count >= 7:
+                    header = ["날짜", "순위", "상품명", "판매처", "가격", "링크", "썸네일"]
+                else:
+                    header = ["날짜", "순위", "상품명", "판매처", "가격", "링크"]
+
+            col_map = {name: i for i, name in enumerate(header)}
+
+            def get_val(row, col_name):
+                idx = col_map.get(col_name)
+                if idx is None or idx >= len(row):
+                    return ""
+                return row[idx]
+
+            records = []
+            for row in data_rows:
+                if not row or not any(row):
+                    continue
+                record = {
+                    "날짜":  get_val(row, "날짜"),
+                    "순위":  get_val(row, "순위"),
+                    "상품명": get_val(row, "상품명"),
+                    "판매처": get_val(row, "판매처"),
+                    "가격":  get_val(row, "가격"),
+                    "링크":  get_val(row, "링크"),
+                    "썸네일": get_val(row, "썸네일"),
+                }
+                if record["날짜"] and str(record["순위"]).strip() and record["상품명"]:
+                    records.append(record)
+
+            return records
+
+        except gspread.exceptions.WorksheetNotFound:
             return []
-        records = worksheet.get_all_records()
-        return [r["키워드"] for r in records if r.get("키워드")]
-    except Exception as e:
-        st.error(f"모니터링 목록 불러오기 오류: {e}")
+    except Exception:
         return []
 
 
