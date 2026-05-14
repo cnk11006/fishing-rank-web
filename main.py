@@ -258,7 +258,6 @@ def collect_rank_data(keyword, client_id, client_secret):
 # [5] 네이버 광고 API 함수
 # =============================================
 def get_ad_api_header(method, uri):
-    """네이버 광고 API 인증 헤더 생성"""
     timestamp = str(int(time.time() * 1000))
     signature_raw = f"{timestamp}.{method}.{uri}"
     hashed = hmac.new(
@@ -277,12 +276,25 @@ def get_ad_api_header(method, uri):
 
 
 def get_keyword_stats(keywords):
-    """키워드 검색량/경쟁강도 조회 (최대 5개씩)"""
     uri = "/keywordstool"
     base_url = "https://api.naver.com"
     all_results = []
 
-    # 5개씩 나눠서 요청
+    competition_map = {
+        "low": "🟢 낮음",
+        "mid": "🟡 중간",
+        "high": "🔴 높음",
+        "Low": "🟢 낮음",
+        "Mid": "🟡 중간",
+        "High": "🔴 높음",
+        "LOW": "🟢 낮음",
+        "MID": "🟡 중간",
+        "HIGH": "🔴 높음",
+        "낮음": "🟢 낮음",
+        "중간": "🟡 중간",
+        "높음": "🔴 높음",
+    }
+
     for i in range(0, len(keywords), 5):
         chunk = keywords[i:i+5]
         params = "&".join([f"hintKeywords={kw}" for kw in chunk])
@@ -290,20 +302,14 @@ def get_keyword_stats(keywords):
         headers = get_ad_api_header("GET", uri)
 
         try:
-            response = requests.get(
-                base_url + full_uri,
-                headers=headers
-            )
+            response = requests.get(base_url + full_uri, headers=headers)
             if response.status_code == 200:
                 data = response.json()
                 keyword_list = data.get("keywordList", [])
                 for item in keyword_list:
-                    st.write(f"API 응답 키 목록: {list(item.keys())}")
-                    st.write(f"compIdx 값: {item.get('compIdx', 'KEY없음')}")
                     monthly_pc = item.get("monthlyPcQcCnt", 0)
                     monthly_mobile = item.get("monthlyMobileQcCnt", 0)
 
-                    # "< 10" 같은 문자열 처리
                     try:
                         monthly_pc = int(monthly_pc)
                     except Exception:
@@ -314,17 +320,7 @@ def get_keyword_stats(keywords):
                         monthly_mobile = 5
 
                     competition = item.get("compIdx", "")
-                    competition_label = {
-                        "low": "🟢 낮음",
-                        "mid": "🟡 중간",
-                        "high": "🔴 높음",
-                        "Low": "🟢 낮음",
-                        "Mid": "🟡 중간",
-                        "High": "🔴 높음",
-                        "LOW": "🟢 낮음",
-                        "MID": "🟡 중간",
-                        "HIGH": "🔴 높음",
-                    }.get(competition, "❓ 알 수 없음")
+                    competition_label = competition_map.get(competition, f"{competition}")
 
                     all_results.append({
                         "키워드": item.get("relKeyword", ""),
@@ -833,12 +829,10 @@ with tab3:
             if not results:
                 st.error("데이터를 불러오지 못했습니다. API 키를 확인해주세요.")
             else:
-                # 입력 키워드 정확히 매칭되는 결과 먼저 표시
                 main_result = next(
                     (r for r in results if r["키워드"] == analysis_keyword),
                     results[0]
                 )
-
                 st.session_state["analysis_keyword"] = analysis_keyword
                 st.session_state["analysis_results"] = results
                 st.session_state["main_result"] = main_result
@@ -852,7 +846,6 @@ with tab3:
         st.divider()
         st.markdown(f"##### 📌 '{analysis_keyword}' 키워드 분석 결과")
 
-        # 기본 지표
         c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric("💻 PC 검색량", f"{main_result['PC 검색량']:,}")
         c2.metric("📱 모바일 검색량", f"{main_result['모바일 검색량']:,}")
@@ -864,15 +857,13 @@ with tab3:
 
         # --- 섹션 2: 연관 키워드 분석 테이블 ---
         st.markdown("#### 🔗 연관 키워드 분석")
-        st.caption("검색량 높은 순으로 정렬됩니다. 모니터링 등록 버튼으로 바로 추적을 시작하세요!")
+        st.caption("검색량 높은 순으로 정렬됩니다.")
 
         if len(results) > 0:
-            # 검색량 높은 순 정렬
             df_results = pd.DataFrame(results)
             df_results = df_results.sort_values("총 검색량", ascending=False).reset_index(drop=True)
             df_results.index = df_results.index + 1
 
-            # 테이블 표시 (모니터링 등록 제외 컬럼만)
             display_df = df_results[["키워드", "PC 검색량", "모바일 검색량", "총 검색량", "경쟁강도"]].copy()
             st.dataframe(display_df, use_container_width=True)
 
@@ -887,95 +878,3 @@ with tab3:
                 mime="text/csv; charset=utf-8-sig",
                 use_container_width=True
             )
-
-            st.divider()
-
-            # 모니터링 등록
-            st.markdown("#### ➕ 연관 키워드 모니터링 등록")
-            st.caption("아래에서 모니터링할 키워드를 선택하고 바로 등록하세요!")
-
-            keyword_options = df_results["키워드"].tolist()
-            selected_for_monitor = st.multiselect(
-                "모니터링 등록할 키워드 선택 (복수 선택 가능)",
-                keyword_options,
-                label_visibility="collapsed",
-                placeholder="키워드를 선택하세요..."
-            )
-
-            if st.button("📋 선택한 키워드 모니터링 등록", use_container_width=True):
-                if not selected_for_monitor:
-                    st.warning("등록할 키워드를 선택해주세요.")
-                else:
-                    success_list = []
-                    fail_list = []
-                    for kw in selected_for_monitor:
-                        ok, msg = add_monitor_keyword(kw)
-                        if ok:
-                            success_list.append(kw)
-                        else:
-                            fail_list.append(f"{kw} ({msg})")
-                    if success_list:
-                        st.success(f"✅ 등록 완료: {', '.join(success_list)}")
-                    if fail_list:
-                        st.warning(f"⚠️ 등록 실패: {', '.join(fail_list)}")
-
-            st.divider()
-
-            # --- 섹션 3: 우리 상품 순위 확인 ---
-            st.markdown("#### 🏆 키워드별 피싱템 상품 순위 확인")
-            st.caption("연관 키워드 중 하나를 선택하면 피싱템 상품이 몇 위인지 바로 확인합니다.")
-
-            rank_check_kw = st.selectbox(
-                "순위 확인할 키워드 선택",
-                keyword_options,
-                label_visibility="collapsed",
-                key="rank_check_select"
-            )
-
-            col_rank_btn1, col_rank_btn2 = st.columns(2)
-            with col_rank_btn1:
-                check_rank_btn = st.button(
-                    "🔎 순위 확인하기",
-                    type="primary",
-                    use_container_width=True
-                )
-            with col_rank_btn2:
-                # 순위 확인 후 모니터링 등록 버튼
-                add_after_check = st.button(
-                    "📋 이 키워드 모니터링 등록",
-                    use_container_width=True
-                )
-
-            if add_after_check:
-                ok, msg = add_monitor_keyword(rank_check_kw)
-                if ok:
-                    st.success(f"✅ '{rank_check_kw}' 모니터링 등록 완료!")
-                else:
-                    st.warning(msg)
-
-            if check_rank_btn:
-                with st.spinner(f"🛰️ '{rank_check_kw}' 키워드 400위까지 수색 중..."):
-                    found, prices, top100, err = collect_rank_data(
-                        rank_check_kw, CLIENT_ID, CLIENT_SECRET
-                    )
-
-                if err:
-                    st.error(f"수색 오류: {err}")
-                elif not found:
-                    st.error(f"⚠️ '{rank_check_kw}' 키워드에서 피싱템 상품이 400위 내에 없습니다.")
-                else:
-                    st.success(f"✅ '{rank_check_kw}' 키워드에서 피싱템 상품 **{len(found)}개** 발견!")
-
-                    rank_df = pd.DataFrame([{
-                        "순위": item["순위"],
-                        "상품명": item["상품명"],
-                        "가격": f"{item['가격']:,}원",
-                        "링크": item["링크"]
-                    } for item in sorted(found, key=lambda x: x["순위"])])
-
-                    st.dataframe(rank_df, use_container_width=True, hide_index=True)
-
-                    # 결과 저장 여부
-                    if st.button("💾 이 결과도 구글 시트에 저장", use_container_width=True):
-                        if save_to_sheet(rank_check_kw, found):
-                            st.success("✅ 저장 완료!")
