@@ -298,6 +298,8 @@ def get_keyword_stats(keywords):
                 data = response.json()
                 keyword_list = data.get("keywordList", [])
                 for item in keyword_list:
+                    st.write(f"API 응답 키 목록: {list(item.keys())}")
+                     st.write(f"compIdx 값: {item.get('compIdx', 'KEY없음')}")
                     monthly_pc = item.get("monthlyPcQcCnt", 0)
                     monthly_mobile = item.get("monthlyMobileQcCnt", 0)
 
