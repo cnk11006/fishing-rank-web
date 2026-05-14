@@ -476,9 +476,9 @@ with tab2:
     st.markdown("#### ➕ 키워드 등록")
     col_input, col_memo, col_btn = st.columns([2, 2, 1])
     with col_input:
-        new_keyword = st.text_input("키워드", placeholder="예: 등록한 키워드", label_visibility="collapsed")
+        new_keyword = st.text_input("키워드", placeholder="예: 검색할 키워드", label_visibility="collapsed")
     with col_memo:
-        new_memo = st.text_input("메모 (선택)", placeholder="예: 엑셀에 기록될 메모", label_visibility="collapsed")
+        new_memo = st.text_input("메모 (선택)", placeholder="예: 메모(입력안해도 됨)", label_visibility="collapsed")
     with col_btn:
         if st.button("➕ 등록", use_container_width=True):
             if not new_keyword:
