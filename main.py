@@ -315,13 +315,13 @@ def get_keyword_stats(keywords):
                     competition_label = {
                         "low": "🟢 낮음",
                         "mid": "🟡 중간",
-                        "high": "🔴 높음"
+                        "high": "🔴 높음",
                         "Low": "🟢 낮음",
                         "Mid": "🟡 중간",
-                        "High": "🔴 높음"
+                        "High": "🔴 높음",
                         "LOW": "🟢 낮음",
                         "MID": "🟡 중간",
-                        "HIGH": "🔴 높음"
+                        "HIGH": "🔴 높음",
                     }.get(competition, "❓ 알 수 없음")
 
                     all_results.append({
