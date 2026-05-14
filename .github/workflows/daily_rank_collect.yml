@@ -1,0 +1,30 @@
+name: 📊 Daily Rank Collector
+
+on:
+  schedule:
+    - cron: '0 0 * * *'   # 매일 UTC 00:00 = 한국시간 09:00
+  workflow_dispatch:        # 수동 실행 버튼도 활성화
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: 🐍 Python 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 패키지 설치
+        run: pip install requests gspread google-auth
+
+      - name: 🚀 순위 자동 수집 실행
+        env:
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+        run: python auto_collect.py
