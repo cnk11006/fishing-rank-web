@@ -678,3 +678,7 @@ with tab2:
             st.success("🎉 일괄 수색 완료! 결과 요약:")
             df_result = pd.DataFrame(results_summary)
             st.dataframe(df_result, use_container_width=True, hide_index=True)
+
+            # 완료 후 2초 대기 후 자동 새로고침 → 현황 카드 즉시 반영
+            time.sleep(2)
+            st.rerun()
