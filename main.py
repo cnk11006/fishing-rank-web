@@ -47,7 +47,6 @@ def get_google_sheet():
 
 
 def get_or_create_worksheet(sh, title, rows=1000, cols=10):
-    """워크시트를 가져오거나 없으면 생성"""
     try:
         return sh.worksheet(title)
     except gspread.exceptions.WorksheetNotFound:
@@ -55,17 +54,13 @@ def get_or_create_worksheet(sh, title, rows=1000, cols=10):
 
 
 def save_to_sheet(keyword, found_items):
-    """순위 데이터를 키워드별 시트에 저장"""
     try:
         sh = get_google_sheet()
         today = datetime.now().strftime("%Y-%m-%d %H:%M")
         worksheet = get_or_create_worksheet(sh, keyword)
-
-        # 헤더가 없으면 추가
         existing = worksheet.get_all_values()
         if not existing:
             worksheet.append_row(["날짜", "순위", "상품명", "판매처", "가격", "링크"])
-
         for item in found_items:
             worksheet.append_row([
                 today,
@@ -82,13 +77,11 @@ def save_to_sheet(keyword, found_items):
 
 
 def load_from_sheet(keyword):
-    """키워드별 시트에서 순위 히스토리 로드"""
     try:
         sh = get_google_sheet()
         try:
             worksheet = sh.worksheet(keyword)
             records = worksheet.get_all_records()
-            # 빈 행 및 필수 컬럼 없는 행 필터링
             return [
                 r for r in records
                 if r.get("날짜") and r.get("순위") and r.get("상품명")
@@ -100,12 +93,11 @@ def load_from_sheet(keyword):
 
 
 # =============================================
-# [3] 모니터링 목록 관리 함수 (전용 시트 탭)
+# [3] 모니터링 목록 관리 함수
 # =============================================
 MONITOR_SHEET_NAME = "📋 모니터링 목록"
 
 def load_monitor_keywords():
-    """모니터링 등록 키워드 목록 불러오기"""
     try:
         sh = get_google_sheet()
         worksheet = get_or_create_worksheet(sh, MONITOR_SHEET_NAME, rows=500, cols=3)
@@ -122,20 +114,16 @@ def load_monitor_keywords():
 
 
 def add_monitor_keyword(keyword, memo=""):
-    """모니터링 키워드 등록"""
     try:
         sh = get_google_sheet()
         worksheet = get_or_create_worksheet(sh, MONITOR_SHEET_NAME, rows=500, cols=3)
         existing = worksheet.get_all_values()
         if not existing:
             worksheet.append_row(["키워드", "등록일", "메모"])
-
-        # 중복 확인
         records = worksheet.get_all_records()
         existing_keywords = [r["키워드"] for r in records]
         if keyword in existing_keywords:
             return False, "이미 등록된 키워드입니다."
-
         today = datetime.now().strftime("%Y-%m-%d %H:%M")
         worksheet.append_row([keyword, today, memo])
         return True, "등록 완료"
@@ -144,12 +132,11 @@ def add_monitor_keyword(keyword, memo=""):
 
 
 def delete_monitor_keyword(keyword):
-    """모니터링 키워드 삭제"""
     try:
         sh = get_google_sheet()
         worksheet = sh.worksheet(MONITOR_SHEET_NAME)
         records = worksheet.get_all_records()
-        for i, row in enumerate(records, start=2):  # 헤더가 1행이므로 2부터
+        for i, row in enumerate(records, start=2):
             if row["키워드"] == keyword:
                 worksheet.delete_rows(i)
                 return True
@@ -163,10 +150,6 @@ def delete_monitor_keyword(keyword):
 # [4] 네이버 쇼핑 순위 수집 함수 (공통)
 # =============================================
 def collect_rank_data(keyword, client_id, client_secret):
-    """
-    특정 키워드로 400위까지 수색하여 자사 상품과
-    1~100위 가격 데이터를 반환
-    """
     found_items = []
     price_list = []
     top100_items = []
@@ -188,11 +171,9 @@ def collect_rank_data(keyword, client_id, client_secret):
             items = response.json().get('items', [])
             if not items:
                 break
-
             for index, item in enumerate(items):
                 mall_name = item.get('mallName', '')
                 clean_title = item['title'].replace('<b>', '').replace('</b>', '')
-
                 if page == 0:
                     try:
                         price = int(item.get('lprice', 0))
@@ -208,7 +189,6 @@ def collect_rank_data(keyword, client_id, client_secret):
                             })
                     except Exception:
                         pass
-
                 if TARGET_STORE in mall_name or TARGET_STORE in item['title']:
                     found_items.append({
                         "순위": start_num + index,
@@ -227,7 +207,59 @@ def collect_rank_data(keyword, client_id, client_secret):
 
 
 # =============================================
-# [5] 로그인 로직
+# [5] 순위 변동 그래프 함수
+# =============================================
+def render_rank_graph(keyword):
+    """특정 키워드의 순위 변동 그래프를 렌더링"""
+    data = load_from_sheet(keyword)
+    if not data:
+        st.info(f"'{keyword}' 키워드의 저장된 데이터가 없습니다. 먼저 수색을 진행해주세요!")
+        return
+
+    products = {}
+    for row in data:
+        name = row.get("상품명", "")[:20]
+        date = row.get("날짜", "")
+        rank = row.get("순위", 0)
+        if not name or not date or not rank:
+            continue
+        if name not in products:
+            products[name] = {"dates": [], "ranks": []}
+        products[name]["dates"].append(date)
+        products[name]["ranks"].append(int(rank))
+
+    if not products:
+        st.info("유효한 그래프 데이터가 없습니다.")
+        return
+
+    fig = go.Figure()
+    for name, values in products.items():
+        fig.add_trace(go.Scatter(
+            x=values["dates"],
+            y=values["ranks"],
+            mode="lines+markers",
+            name=name,
+            line=dict(width=2),
+            marker=dict(size=8)
+        ))
+
+    fig.update_layout(
+        title=f"'{keyword}' 순위 변동 추이",
+        xaxis_title="날짜",
+        yaxis_title="순위",
+        yaxis=dict(autorange="reversed"),
+        height=400,
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=-0.4),
+        margin=dict(t=40, b=80)
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption(f"총 {len(data)}개의 기록 데이터 기반")
+
+
+# =============================================
+# [6] 로그인 로직
 # =============================================
 if 'authenticated' not in st.session_state:
     st.session_state['authenticated'] = False
@@ -244,7 +276,7 @@ if not st.session_state['authenticated']:
     st.stop()
 
 # =============================================
-# [6] 메인 화면
+# [7] 메인 화면
 # =============================================
 st.title("🎣 피싱템 순위 레이더")
 
@@ -253,7 +285,8 @@ st.link_button(
     f"https://docs.google.com/spreadsheets/d/{SHEET_ID}",
 )
 
-tab1, tab2, tab3 = st.tabs(["🔍 순위 수색", "📈 순위 변동 그래프", "📋 모니터링 관리"])
+# 탭 2개로 축소
+tab1, tab2 = st.tabs(["🔍 순위 수색", "📋 모니터링 관리"])
 
 
 # =============================================
@@ -274,7 +307,6 @@ with tab1:
             for page in range(4):
                 start_num = (page * 100) + 1
                 progress_text.info(f"🛰️ {start_num}위 ~ {start_num + 99}위 구간 수색 중...")
-
                 url = (
                     f"https://openapi.naver.com/v1/search/shop.json"
                     f"?query={keyword}&display=100&start={start_num}"
@@ -289,11 +321,9 @@ with tab1:
                     items = response.json().get('items', [])
                     if not items:
                         break
-
                     for index, item in enumerate(items):
                         mall_name = item.get('mallName', '')
                         clean_title = item['title'].replace('<b>', '').replace('</b>', '')
-
                         if page == 0:
                             try:
                                 price = int(item.get('lprice', 0))
@@ -309,7 +339,6 @@ with tab1:
                                     })
                             except Exception:
                                 pass
-
                         if TARGET_STORE in mall_name or TARGET_STORE in item['title']:
                             found_items.append({
                                 "순위": start_num + index,
@@ -326,13 +355,11 @@ with tab1:
 
             progress_text.empty()
 
-            # 구글 시트 자동 저장
             if found_items:
                 with st.spinner("📊 구글 시트에 기록 중..."):
                     if save_to_sheet(keyword, found_items):
                         st.success("✅ 구글 시트에 자동 저장 완료!")
 
-            # 가격 분석 (avg_price 기본값 0으로 안전 처리)
             avg_price = 0
             min_price = 0
             max_price = 0
@@ -383,7 +410,6 @@ with tab1:
 
                 st.divider()
 
-                # 최저가 TOP 5
                 st.subheader("🏅 최저가 TOP 5 (1위 ~ 100위 기준)")
                 top5 = sorted(top100_items, key=lambda x: x["가격"])[:5]
                 t_cols = st.columns(5)
@@ -402,7 +428,6 @@ with tab1:
 
                 st.divider()
 
-            # 자사 상품 카드
             if not found_items:
                 st.error(f"⚠️ 현재 '{TARGET_STORE}' 상품이 400위 내에 비노출 중입니다.")
             else:
@@ -441,70 +466,9 @@ with tab1:
 
 
 # =============================================
-# TAB 2 - 순위 변동 그래프
+# TAB 2 - 모니터링 관리 (그래프 통합)
 # =============================================
 with tab2:
-    st.subheader("📈 순위 변동 추이")
-    graph_keyword = st.text_input("그래프로 볼 키워드 입력", key="graph_keyword")
-
-    if st.button("📊 그래프 불러오기"):
-        if not graph_keyword:
-            st.warning("키워드를 입력해주세요.")
-        else:
-            with st.spinner("데이터 불러오는 중..."):
-                data = load_from_sheet(graph_keyword)
-
-            if not data:
-                st.warning(
-                    f"'{graph_keyword}' 키워드의 저장된 데이터가 없습니다. "
-                    "먼저 순위 수색을 해주세요!"
-                )
-            else:
-                products = {}
-                for row in data:
-                    name = row.get("상품명", "")[:20]
-                    date = row.get("날짜", "")
-                    rank = row.get("순위", 0)
-                    # 빈 값 건너뛰기
-                    if not name or not date or not rank:
-                        continue
-                    if name not in products:
-                        products[name] = {"dates": [], "ranks": []}
-                    products[name]["dates"].append(date)
-                    products[name]["ranks"].append(rank)
-
-                if not products:
-                    st.warning("유효한 데이터가 없습니다.")
-                else:
-                    fig = go.Figure()
-                    for name, values in products.items():
-                        fig.add_trace(go.Scatter(
-                            x=values["dates"],
-                            y=values["ranks"],
-                            mode="lines+markers",
-                            name=name,
-                            line=dict(width=2),
-                            marker=dict(size=8)
-                        ))
-
-                    fig.update_layout(
-                        title=f"'{graph_keyword}' 키워드 순위 변동 추이",
-                        xaxis_title="날짜",
-                        yaxis_title="순위",
-                        yaxis=dict(autorange="reversed"),
-                        height=500,
-                        hovermode="x unified",
-                        legend=dict(orientation="h", yanchor="bottom", y=-0.3)
-                    )
-
-                    st.plotly_chart(fig, use_container_width=True)
-                    st.caption(f"총 {len(data)}개의 기록 데이터 기반")
-
-
-# =============================================
-# TAB 3 - 모니터링 관리
-# =============================================
-with tab3:
     st.subheader("📋 모니터링 키워드 관리")
     st.caption("등록한 키워드를 자동으로 추적합니다. GitHub Actions를 설정하면 매일 자동 수집됩니다.")
 
@@ -530,8 +494,8 @@ with tab3:
 
     st.divider()
 
-    # --- 섹션 2: 등록된 키워드 목록 ---
-    st.markdown("#### 📌 등록된 모니터링 키워드")
+    # --- 섹션 2: 등록된 키워드 목록 + 그래프 ---
+    st.markdown("#### 📌 등록된 모니터링 키워드 현황")
 
     with st.spinner("목록 불러오는 중..."):
         monitor_keywords = load_monitor_keywords()
@@ -541,12 +505,9 @@ with tab3:
     else:
         st.caption(f"총 {len(monitor_keywords)}개 키워드 등록됨")
 
-        # 키워드별 최신 순위 현황 테이블
         keyword_status = []
         for kw in monitor_keywords:
             history = load_from_sheet(kw)
-
-            # 유효한 데이터만 필터링 (핵심 버그 수정)
             history = [
                 r for r in history
                 if r.get("날짜") and str(r.get("순위", "")).strip()
@@ -554,22 +515,19 @@ with tab3:
 
             if history:
                 try:
-                    # 최신 수집 데이터
                     latest_date = max(set(r["날짜"] for r in history))
                     latest_records = [r for r in history if r["날짜"] == latest_date]
                     best_rank_now = min(int(r["순위"]) for r in latest_records)
 
-                    # 이전 수집 데이터 (변동 계산용)
                     all_dates = sorted(set(r["날짜"] for r in history))
                     if len(all_dates) >= 2:
                         prev_date = all_dates[-2]
                         prev_records = [r for r in history if r["날짜"] == prev_date]
                         best_rank_prev = min(int(r["순위"]) for r in prev_records)
-                        change = best_rank_prev - best_rank_now  # 양수 = 순위 상승
+                        change = best_rank_prev - best_rank_now
                     else:
                         change = None
 
-                    # 상태 뱃지
                     if best_rank_now <= 50:
                         status = "🟢 TOP 50"
                     elif best_rank_now <= 100:
@@ -579,7 +537,6 @@ with tab3:
                     else:
                         status = "🔴 200위 밖"
 
-                    # 변동 표시
                     if change is None:
                         change_str = "➖ 첫 수집"
                     elif change > 0:
@@ -597,7 +554,6 @@ with tab3:
                         "최근 수집일": latest_date,
                         "노출 상품 수": len(latest_records)
                     })
-
                 except Exception as e:
                     keyword_status.append({
                         "키워드": kw,
@@ -617,20 +573,34 @@ with tab3:
                     "노출 상품 수": 0
                 })
 
-        # 현황 테이블 출력
+        # 현황 테이블
         df_status = pd.DataFrame(keyword_status)
         st.dataframe(df_status, use_container_width=True, hide_index=True)
 
         st.divider()
 
-        # --- 섹션 3: 키워드 삭제 ---
+        # --- 섹션 3: 키워드 선택 → 그래프 ---
+        st.markdown("#### 📈 키워드별 순위 변동 그래프")
+        selected_kw = st.selectbox(
+            "그래프로 볼 키워드 선택",
+            monitor_keywords,
+            key="graph_select"
+        )
+        if st.button("📊 그래프 보기", use_container_width=True):
+            with st.spinner("데이터 불러오는 중..."):
+                render_rank_graph(selected_kw)
+
+        st.divider()
+
+        # --- 섹션 4: 키워드 삭제 ---
         st.markdown("#### 🗑️ 키워드 삭제")
         del_col1, del_col2 = st.columns([3, 1])
         with del_col1:
             keyword_to_delete = st.selectbox(
                 "삭제할 키워드 선택",
                 monitor_keywords,
-                label_visibility="collapsed"
+                label_visibility="collapsed",
+                key="delete_select"
             )
         with del_col2:
             if st.button("🗑️ 삭제", use_container_width=True, type="secondary"):
@@ -643,7 +613,7 @@ with tab3:
 
         st.divider()
 
-        # --- 섹션 4: 전체 일괄 수색 ---
+        # --- 섹션 5: 전체 일괄 수색 ---
         st.markdown("#### 🚀 등록 키워드 전체 일괄 수색")
         st.caption("등록된 모든 키워드를 순서대로 수색하고 결과를 구글 시트에 저장합니다.")
 
@@ -657,7 +627,6 @@ with tab3:
                     idx / total,
                     text=f"🔍 [{idx+1}/{total}] '{kw}' 수색 중..."
                 )
-
                 found, prices, top100, err = collect_rank_data(kw, CLIENT_ID, CLIENT_SECRET)
 
                 if err:
