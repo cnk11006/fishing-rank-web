@@ -1,5 +1,5 @@
 # =============================================
-# 피싱템 순위 레이더 - 전체 코드 (수정본)
+# 피싱템 순위 레이더 - 전체 코드
 # =============================================
 
 import streamlit as st
@@ -34,7 +34,6 @@ except Exception:
 # [2] 구글 시트 연결 함수 (세션당 1회만 연결)
 # =============================================
 def get_google_sheet():
-    """세션 상태에 구글 시트 연결을 캐싱하여 재사용"""
     if "google_sheet" not in st.session_state:
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
@@ -55,19 +54,17 @@ def get_or_create_worksheet(sh, title, rows=1000, cols=10):
     except gspread.exceptions.WorksheetNotFound:
         return sh.add_worksheet(title=title, rows=rows, cols=cols)
 
+
 def save_to_sheet(keyword, found_items):
     try:
         sh = get_google_sheet()
         today = datetime.now().strftime("%Y-%m-%d %H:%M")
         worksheet = get_or_create_worksheet(sh, keyword)
 
-        # ★ 핵심 수정: get_all_values() 대신 row_count로 정확히 판단
         all_values = worksheet.get_all_values()
-        # 실제 데이터가 있는 행만 필터링
         non_empty_rows = [row for row in all_values if any(cell.strip() for cell in row)]
 
         if not non_empty_rows:
-            # 완전히 비어있을 때만 헤더 추가
             worksheet.append_row(["날짜", "순위", "상품명", "판매처", "가격", "링크", "썸네일"])
 
         for item in found_items:
@@ -86,11 +83,6 @@ def save_to_sheet(keyword, found_items):
         return False
 
 
-# =============================================
-# [3] 모니터링 목록 관리 함수
-# =============================================
-MONITOR_SHEET_NAME = "📋 모니터링 목록"
-
 def load_from_sheet(keyword, sh=None):
     try:
         if sh is None:
@@ -104,7 +96,6 @@ def load_from_sheet(keyword, sh=None):
 
             first_row = all_values[0]
 
-            # 헤더 행 여부 확인
             has_header = any(
                 cell in ["날짜", "순위", "상품명"] for cell in first_row
             )
@@ -133,12 +124,12 @@ def load_from_sheet(keyword, sh=None):
                 if not row or not any(row):
                     continue
                 record = {
-                    "날짜":  get_val(row, "날짜"),
-                    "순위":  get_val(row, "순위"),
+                    "날짜":   get_val(row, "날짜"),
+                    "순위":   get_val(row, "순위"),
                     "상품명": get_val(row, "상품명"),
                     "판매처": get_val(row, "판매처"),
-                    "가격":  get_val(row, "가격"),
-                    "링크":  get_val(row, "링크"),
+                    "가격":   get_val(row, "가격"),
+                    "링크":   get_val(row, "링크"),
                     "썸네일": get_val(row, "썸네일"),
                 }
                 if record["날짜"] and str(record["순위"]).strip() and record["상품명"]:
@@ -149,6 +140,28 @@ def load_from_sheet(keyword, sh=None):
         except gspread.exceptions.WorksheetNotFound:
             return []
     except Exception:
+        return []
+
+
+# =============================================
+# [3] 모니터링 목록 관리 함수
+# =============================================
+MONITOR_SHEET_NAME = "📋 모니터링 목록"
+
+def load_monitor_keywords(sh=None):
+    try:
+        if sh is None:
+            sh = get_google_sheet()
+        worksheet = get_or_create_worksheet(sh, MONITOR_SHEET_NAME, rows=500, cols=3)
+        existing = worksheet.get_all_values()
+        if not existing or existing[0] != ["키워드", "등록일", "메모"]:
+            worksheet.clear()
+            worksheet.append_row(["키워드", "등록일", "메모"])
+            return []
+        records = worksheet.get_all_records()
+        return [r["키워드"] for r in records if r.get("키워드")]
+    except Exception as e:
+        st.error(f"모니터링 목록 불러오기 오류: {e}")
         return []
 
 
@@ -172,8 +185,6 @@ def add_monitor_keyword(keyword, memo=""):
 
 def delete_monitor_keyword(keyword):
     try:
-        sh = get_google_sheet()
-        # 세션 캐시 초기화하여 다음 로드시 새로 연결
         if "google_sheet" in st.session_state:
             del st.session_state["google_sheet"]
         sh = get_google_sheet()
@@ -190,7 +201,7 @@ def delete_monitor_keyword(keyword):
 
 
 # =============================================
-# [4] 네이버 쇼핑 순위 수집 함수 (공통)
+# [4] 네이버 쇼핑 순위 수집 함수
 # =============================================
 def collect_rank_data(keyword, client_id, client_secret):
     found_items = []
@@ -538,7 +549,6 @@ with tab2:
     # --- 섹션 2: 등록된 키워드 현황 (카드 형태) ---
     st.markdown("#### 📌 등록된 모니터링 키워드 현황")
 
-    # ★ 핵심 수정: 구글 시트 연결을 1회만 하고 재사용
     with st.spinner("목록 불러오는 중..."):
         sh = get_google_sheet()
         monitor_keywords = load_monitor_keywords(sh=sh)
@@ -548,14 +558,12 @@ with tab2:
     else:
         st.caption(f"총 {len(monitor_keywords)}개 키워드 등록됨")
 
-        # 키워드별 카드 렌더링
         COLS_PER_ROW = 4
         for row_start in range(0, len(monitor_keywords), COLS_PER_ROW):
             row_kws = monitor_keywords[row_start: row_start + COLS_PER_ROW]
             cols = st.columns(COLS_PER_ROW)
             for col, kw in zip(cols, row_kws):
                 with col:
-                    # ★ 핵심 수정: sh 재사용으로 연결 속도 개선
                     history = load_from_sheet(kw, sh=sh)
 
                     thumbnail = ""
@@ -633,20 +641,7 @@ with tab2:
 
         st.divider()
 
-        # --- 섹션 3: 그래프 ---
-        st.markdown("#### 📈 키워드별 순위 변동 그래프")
-        selected_kw = st.selectbox(
-            "그래프로 볼 키워드 선택",
-            monitor_keywords,
-            key="graph_select"
-        )
-        if st.button("📊 그래프 보기", use_container_width=True):
-            with st.spinner("데이터 불러오는 중..."):
-                render_rank_graph(selected_kw, sh=sh)
-
-        st.divider()
-
-        # --- 섹션 4: 키워드 삭제 ---
+        # --- 섹션 3: 키워드 삭제 ---
         st.markdown("#### 🗑️ 키워드 삭제")
         del_col1, del_col2 = st.columns([3, 1])
         with del_col1:
@@ -667,7 +662,7 @@ with tab2:
 
         st.divider()
 
-        # --- 섹션 5: 전체 일괄 수색 ---
+        # --- 섹션 4: 전체 일괄 수색 ---
         st.markdown("#### 🚀 등록 키워드 전체 일괄 수색")
         st.caption("등록된 모든 키워드를 순서대로 수색하고 결과를 구글 시트에 저장합니다.")
 
@@ -713,8 +708,20 @@ with tab2:
             df_result = pd.DataFrame(results_summary)
             st.dataframe(df_result, use_container_width=True, hide_index=True)
 
-            # ★ 핵심 수정: 세션 캐시를 초기화하여 새 데이터로 재로드 후 rerun
             if "google_sheet" in st.session_state:
                 del st.session_state["google_sheet"]
             time.sleep(1)
             st.rerun()
+
+        st.divider()
+
+        # --- 섹션 5: 키워드별 순위 변동 그래프 (맨 마지막) ---
+        st.markdown("#### 📈 키워드별 순위 변동 그래프")
+        selected_kw = st.selectbox(
+            "그래프로 볼 키워드 선택",
+            monitor_keywords,
+            key="graph_select"
+        )
+        if st.button("📊 그래프 보기", use_container_width=True):
+            with st.spinner("데이터 불러오는 중..."):
+                render_rank_graph(selected_kw, sh=sh)
