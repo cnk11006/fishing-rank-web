@@ -10,9 +10,12 @@ from google.oauth2.service_account import Credentials
 import plotly.graph_objects as go
 from datetime import datetime
 import pandas as pd
+import hmac
+import hashlib
+import base64
 
 # =============================================
-# [0] 페이지 설정 - 반드시 최상단에 위치
+# [0] 페이지 설정
 # =============================================
 st.set_page_config(page_title="피싱템 순위 추적기", layout="wide")
 
@@ -26,12 +29,15 @@ try:
     CLIENT_SECRET = st.secrets["NAVER_CLIENT_SECRET"]
     MASTER_PASSWORD = st.secrets["APP_PASSWORD"]
     SHEET_ID = st.secrets["GOOGLE_SHEET_ID"]
+    AD_CUSTOMER_ID = st.secrets["NAVER_AD_CUSTOMER_ID"]
+    AD_ACCESS_LICENSE = st.secrets["NAVER_AD_ACCESS_LICENSE"]
+    AD_SECRET_KEY = st.secrets["NAVER_AD_SECRET_KEY"]
 except Exception:
     st.error("보안 설정(Secrets)이 완료되지 않았습니다.")
     st.stop()
 
 # =============================================
-# [2] 구글 시트 연결 함수 (세션당 1회만 연결)
+# [2] 구글 시트 연결 함수
 # =============================================
 def get_google_sheet():
     if "google_sheet" not in st.session_state:
@@ -60,13 +66,10 @@ def save_to_sheet(keyword, found_items):
         sh = get_google_sheet()
         today = datetime.now().strftime("%Y-%m-%d %H:%M")
         worksheet = get_or_create_worksheet(sh, keyword)
-
         all_values = worksheet.get_all_values()
         non_empty_rows = [row for row in all_values if any(cell.strip() for cell in row)]
-
         if not non_empty_rows:
             worksheet.append_row(["날짜", "순위", "상품명", "판매처", "가격", "링크", "썸네일"])
-
         for item in found_items:
             worksheet.append_row([
                 today,
@@ -90,16 +93,10 @@ def load_from_sheet(keyword, sh=None):
         try:
             worksheet = sh.worksheet(keyword)
             all_values = worksheet.get_all_values()
-
             if not all_values:
                 return []
-
             first_row = all_values[0]
-
-            has_header = any(
-                cell in ["날짜", "순위", "상품명"] for cell in first_row
-            )
-
+            has_header = any(cell in ["날짜", "순위", "상품명"] for cell in first_row)
             if has_header:
                 header = first_row
                 data_rows = all_values[1:]
@@ -110,7 +107,6 @@ def load_from_sheet(keyword, sh=None):
                     header = ["날짜", "순위", "상품명", "판매처", "가격", "링크", "썸네일"]
                 else:
                     header = ["날짜", "순위", "상품명", "판매처", "가격", "링크"]
-
             col_map = {name: i for i, name in enumerate(header)}
 
             def get_val(row, col_name):
@@ -134,9 +130,7 @@ def load_from_sheet(keyword, sh=None):
                 }
                 if record["날짜"] and str(record["순위"]).strip() and record["상품명"]:
                     records.append(record)
-
             return records
-
         except gspread.exceptions.WorksheetNotFound:
             return []
     except Exception:
@@ -261,7 +255,87 @@ def collect_rank_data(keyword, client_id, client_secret):
 
 
 # =============================================
-# [5] 순위 변동 그래프 함수
+# [5] 네이버 광고 API 함수
+# =============================================
+def get_ad_api_header(method, uri):
+    """네이버 광고 API 인증 헤더 생성"""
+    timestamp = str(int(time.time() * 1000))
+    signature_raw = f"{timestamp}.{method}.{uri}"
+    hashed = hmac.new(
+        AD_SECRET_KEY.encode("utf-8"),
+        signature_raw.encode("utf-8"),
+        hashlib.sha256
+    )
+    signature = base64.b64encode(hashed.digest()).decode("utf-8")
+    return {
+        "Content-Type": "application/json; charset=UTF-8",
+        "X-Timestamp": timestamp,
+        "X-API-KEY": AD_ACCESS_LICENSE,
+        "X-Customer": str(AD_CUSTOMER_ID),
+        "X-Signature": signature
+    }
+
+
+def get_keyword_stats(keywords):
+    """키워드 검색량/경쟁강도 조회 (최대 5개씩)"""
+    uri = "/keywordstool"
+    base_url = "https://api.naver.com"
+    all_results = []
+
+    # 5개씩 나눠서 요청
+    for i in range(0, len(keywords), 5):
+        chunk = keywords[i:i+5]
+        params = "&".join([f"hintKeywords={kw}" for kw in chunk])
+        full_uri = f"{uri}?{params}&showDetail=1"
+        headers = get_ad_api_header("GET", uri)
+
+        try:
+            response = requests.get(
+                base_url + full_uri,
+                headers=headers
+            )
+            if response.status_code == 200:
+                data = response.json()
+                keyword_list = data.get("keywordList", [])
+                for item in keyword_list:
+                    monthly_pc = item.get("monthlyPcQcCnt", 0)
+                    monthly_mobile = item.get("monthlyMobileQcCnt", 0)
+
+                    # "< 10" 같은 문자열 처리
+                    try:
+                        monthly_pc = int(monthly_pc)
+                    except Exception:
+                        monthly_pc = 5
+                    try:
+                        monthly_mobile = int(monthly_mobile)
+                    except Exception:
+                        monthly_mobile = 5
+
+                    competition = item.get("compIdx", "")
+                    competition_label = {
+                        "low": "🟢 낮음",
+                        "mid": "🟡 중간",
+                        "high": "🔴 높음"
+                    }.get(competition, "❓ 알 수 없음")
+
+                    all_results.append({
+                        "키워드": item.get("relKeyword", ""),
+                        "PC 검색량": monthly_pc,
+                        "모바일 검색량": monthly_mobile,
+                        "총 검색량": monthly_pc + monthly_mobile,
+                        "경쟁강도": competition_label,
+                        "PC 클릭률": item.get("monthlyAvePcClkCnt", 0),
+                        "모바일 클릭률": item.get("monthlyAveMobileClkCnt", 0),
+                    })
+            time.sleep(0.2)
+        except Exception as e:
+            st.warning(f"광고 API 오류: {e}")
+
+    return all_results
+
+
+# =============================================
+# [6] 순위 변동 그래프 함수
 # =============================================
 def render_rank_graph(keyword, sh=None):
     data = load_from_sheet(keyword, sh=sh)
@@ -312,7 +386,7 @@ def render_rank_graph(keyword, sh=None):
 
 
 # =============================================
-# [6] 로그인 로직
+# [7] 로그인 로직
 # =============================================
 if 'authenticated' not in st.session_state:
     st.session_state['authenticated'] = False
@@ -329,7 +403,7 @@ if not st.session_state['authenticated']:
     st.stop()
 
 # =============================================
-# [7] 메인 화면
+# [8] 메인 화면
 # =============================================
 st.title("🎣 피싱템 순위 레이더")
 
@@ -338,7 +412,7 @@ st.link_button(
     f"https://docs.google.com/spreadsheets/d/{SHEET_ID}",
 )
 
-tab1, tab2 = st.tabs(["🔍 순위 수색", "📋 모니터링 관리"])
+tab1, tab2, tab3 = st.tabs(["🔍 순위 수색", "📋 모니터링 관리", "📊 키워드 분석"])
 
 
 # =============================================
@@ -546,7 +620,7 @@ with tab2:
 
     st.divider()
 
-    # --- 섹션 2: 등록된 키워드 현황 (카드 형태) ---
+    # --- 섹션 2: 등록된 키워드 현황 ---
     st.markdown("#### 📌 등록된 모니터링 키워드 현황")
 
     with st.spinner("목록 불러오는 중..."):
@@ -565,7 +639,6 @@ with tab2:
             for col, kw in zip(cols, row_kws):
                 with col:
                     history = load_from_sheet(kw, sh=sh)
-
                     thumbnail = ""
                     link = ""
                     best_rank_now = None
@@ -619,23 +692,19 @@ with tab2:
                                 "color:#999; font-size:12px;'>이미지 없음</div>",
                                 unsafe_allow_html=True
                             )
-
                         if link:
                             st.markdown(f"**[🔑 {kw}]({link})**")
                         else:
                             st.markdown(f"**🔑 {kw}**")
-
                         st.caption(
                             f"📦 {product_name[:20]}..."
                             if len(product_name) > 20
                             else f"📦 {product_name}"
                         )
-
                         if best_rank_now:
                             st.markdown(f"🏆 **{best_rank_now}위** · {status}")
                         else:
                             st.markdown("🏆 **미수집**")
-
                         st.caption(change_str)
                         st.caption(f"🕐 {latest_date}")
 
@@ -715,7 +784,7 @@ with tab2:
 
         st.divider()
 
-        # --- 섹션 5: 키워드별 순위 변동 그래프 (맨 마지막) ---
+        # --- 섹션 5: 순위 변동 그래프 ---
         st.markdown("#### 📈 키워드별 순위 변동 그래프")
         selected_kw = st.selectbox(
             "그래프로 볼 키워드 선택",
@@ -725,3 +794,180 @@ with tab2:
         if st.button("📊 그래프 보기", use_container_width=True):
             with st.spinner("데이터 불러오는 중..."):
                 render_rank_graph(selected_kw, sh=sh)
+
+
+# =============================================
+# TAB 3 - 키워드 분석
+# =============================================
+with tab3:
+    st.subheader("📊 키워드 분석")
+    st.caption("네이버 광고 API 기반 키워드 검색량, 경쟁강도, 연관 키워드를 분석합니다.")
+
+    # --- 섹션 1: 키워드 기본 분석 ---
+    st.markdown("#### 🔍 키워드 기본 분석")
+    col_kw, col_btn = st.columns([4, 1])
+    with col_kw:
+        analysis_keyword = st.text_input(
+            "분석할 키워드 입력",
+            placeholder="예: 타이라바 로드",
+            label_visibility="collapsed"
+        )
+    with col_btn:
+        analyze_btn = st.button("🔍 분석 시작", type="primary", use_container_width=True)
+
+    if analyze_btn:
+        if not analysis_keyword:
+            st.warning("키워드를 입력해주세요.")
+        else:
+            with st.spinner("📡 네이버 광고 API에서 데이터 불러오는 중..."):
+                results = get_keyword_stats([analysis_keyword])
+
+            if not results:
+                st.error("데이터를 불러오지 못했습니다. API 키를 확인해주세요.")
+            else:
+                # 입력 키워드 정확히 매칭되는 결과 먼저 표시
+                main_result = next(
+                    (r for r in results if r["키워드"] == analysis_keyword),
+                    results[0]
+                )
+
+                st.session_state["analysis_keyword"] = analysis_keyword
+                st.session_state["analysis_results"] = results
+                st.session_state["main_result"] = main_result
+
+    # 분석 결과 표시
+    if "main_result" in st.session_state:
+        main_result = st.session_state["main_result"]
+        results = st.session_state["analysis_results"]
+        analysis_keyword = st.session_state["analysis_keyword"]
+
+        st.divider()
+        st.markdown(f"##### 📌 '{analysis_keyword}' 키워드 분석 결과")
+
+        # 기본 지표
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("💻 PC 검색량", f"{main_result['PC 검색량']:,}")
+        c2.metric("📱 모바일 검색량", f"{main_result['모바일 검색량']:,}")
+        c3.metric("🔢 총 검색량", f"{main_result['총 검색량']:,}")
+        c4.metric("⚔️ 경쟁강도", main_result["경쟁강도"])
+        c5.metric("🖱️ PC 클릭수", f"{main_result['PC 클릭률']:,}")
+
+        st.divider()
+
+        # --- 섹션 2: 연관 키워드 분석 테이블 ---
+        st.markdown("#### 🔗 연관 키워드 분석")
+        st.caption("검색량 높은 순으로 정렬됩니다. 모니터링 등록 버튼으로 바로 추적을 시작하세요!")
+
+        if len(results) > 0:
+            # 검색량 높은 순 정렬
+            df_results = pd.DataFrame(results)
+            df_results = df_results.sort_values("총 검색량", ascending=False).reset_index(drop=True)
+            df_results.index = df_results.index + 1
+
+            # 테이블 표시 (모니터링 등록 제외 컬럼만)
+            display_df = df_results[["키워드", "PC 검색량", "모바일 검색량", "총 검색량", "경쟁강도"]].copy()
+            st.dataframe(display_df, use_container_width=True)
+
+            # 엑셀 다운로드
+            csv_data = df_results[["키워드", "PC 검색량", "모바일 검색량", "총 검색량", "경쟁강도"]].to_csv(
+                index=False, encoding="utf-8-sig"
+            )
+            st.download_button(
+                label="📥 엑셀(CSV)로 다운로드",
+                data=csv_data,
+                file_name=f"{analysis_keyword}_키워드분석_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+
+            st.divider()
+
+            # 모니터링 등록
+            st.markdown("#### ➕ 연관 키워드 모니터링 등록")
+            st.caption("아래에서 모니터링할 키워드를 선택하고 바로 등록하세요!")
+
+            keyword_options = df_results["키워드"].tolist()
+            selected_for_monitor = st.multiselect(
+                "모니터링 등록할 키워드 선택 (복수 선택 가능)",
+                keyword_options,
+                label_visibility="collapsed",
+                placeholder="키워드를 선택하세요..."
+            )
+
+            if st.button("📋 선택한 키워드 모니터링 등록", use_container_width=True):
+                if not selected_for_monitor:
+                    st.warning("등록할 키워드를 선택해주세요.")
+                else:
+                    success_list = []
+                    fail_list = []
+                    for kw in selected_for_monitor:
+                        ok, msg = add_monitor_keyword(kw)
+                        if ok:
+                            success_list.append(kw)
+                        else:
+                            fail_list.append(f"{kw} ({msg})")
+                    if success_list:
+                        st.success(f"✅ 등록 완료: {', '.join(success_list)}")
+                    if fail_list:
+                        st.warning(f"⚠️ 등록 실패: {', '.join(fail_list)}")
+
+            st.divider()
+
+            # --- 섹션 3: 우리 상품 순위 확인 ---
+            st.markdown("#### 🏆 키워드별 피싱템 상품 순위 확인")
+            st.caption("연관 키워드 중 하나를 선택하면 피싱템 상품이 몇 위인지 바로 확인합니다.")
+
+            rank_check_kw = st.selectbox(
+                "순위 확인할 키워드 선택",
+                keyword_options,
+                label_visibility="collapsed",
+                key="rank_check_select"
+            )
+
+            col_rank_btn1, col_rank_btn2 = st.columns(2)
+            with col_rank_btn1:
+                check_rank_btn = st.button(
+                    "🔎 순위 확인하기",
+                    type="primary",
+                    use_container_width=True
+                )
+            with col_rank_btn2:
+                # 순위 확인 후 모니터링 등록 버튼
+                add_after_check = st.button(
+                    "📋 이 키워드 모니터링 등록",
+                    use_container_width=True
+                )
+
+            if add_after_check:
+                ok, msg = add_monitor_keyword(rank_check_kw)
+                if ok:
+                    st.success(f"✅ '{rank_check_kw}' 모니터링 등록 완료!")
+                else:
+                    st.warning(msg)
+
+            if check_rank_btn:
+                with st.spinner(f"🛰️ '{rank_check_kw}' 키워드 400위까지 수색 중..."):
+                    found, prices, top100, err = collect_rank_data(
+                        rank_check_kw, CLIENT_ID, CLIENT_SECRET
+                    )
+
+                if err:
+                    st.error(f"수색 오류: {err}")
+                elif not found:
+                    st.error(f"⚠️ '{rank_check_kw}' 키워드에서 피싱템 상품이 400위 내에 없습니다.")
+                else:
+                    st.success(f"✅ '{rank_check_kw}' 키워드에서 피싱템 상품 **{len(found)}개** 발견!")
+
+                    rank_df = pd.DataFrame([{
+                        "순위": item["순위"],
+                        "상품명": item["상품명"],
+                        "가격": f"{item['가격']:,}원",
+                        "링크": item["링크"]
+                    } for item in sorted(found, key=lambda x: x["순위"])])
+
+                    st.dataframe(rank_df, use_container_width=True, hide_index=True)
+
+                    # 결과 저장 여부
+                    if st.button("💾 이 결과도 구글 시트에 저장", use_container_width=True):
+                        if save_to_sheet(rank_check_kw, found):
+                            st.success("✅ 저장 완료!")
