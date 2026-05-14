@@ -87,7 +87,12 @@ def load_from_sheet(keyword):
         sh = get_google_sheet()
         try:
             worksheet = sh.worksheet(keyword)
-            return worksheet.get_all_records()
+            records = worksheet.get_all_records()
+            # 빈 행 및 필수 컬럼 없는 행 필터링
+            return [
+                r for r in records
+                if r.get("날짜") and r.get("순위") and r.get("상품명")
+            ]
         except gspread.exceptions.WorksheetNotFound:
             return []
     except Exception:
@@ -252,7 +257,7 @@ tab1, tab2, tab3 = st.tabs(["🔍 순위 수색", "📈 순위 변동 그래프"
 
 
 # =============================================
-# TAB 1 - 순위 수색 (기존 + avg_price 버그 수정)
+# TAB 1 - 순위 수색
 # =============================================
 with tab1:
     keyword = st.text_input("수색할 키워드를 입력하세요 (예: 타이라바 로드)")
@@ -261,7 +266,6 @@ with tab1:
         if not keyword:
             st.warning("키워드를 입력해주세요.")
         else:
-            # 진행 상태 표시
             progress_text = st.empty()
             found_items = []
             price_list = []
@@ -328,10 +332,11 @@ with tab1:
                     if save_to_sheet(keyword, found_items):
                         st.success("✅ 구글 시트에 자동 저장 완료!")
 
-            # --- 가격 분석 (avg_price 기본값 0으로 안전 처리) ---
+            # 가격 분석 (avg_price 기본값 0으로 안전 처리)
             avg_price = 0
             min_price = 0
             max_price = 0
+            our_avg = 0
 
             if price_list:
                 min_price = min(price_list)
@@ -436,7 +441,7 @@ with tab1:
 
 
 # =============================================
-# TAB 2 - 순위 변동 그래프 (기존 유지)
+# TAB 2 - 순위 변동 그래프
 # =============================================
 with tab2:
     st.subheader("📈 순위 변동 추이")
@@ -460,34 +465,40 @@ with tab2:
                     name = row.get("상품명", "")[:20]
                     date = row.get("날짜", "")
                     rank = row.get("순위", 0)
+                    # 빈 값 건너뛰기
+                    if not name or not date or not rank:
+                        continue
                     if name not in products:
                         products[name] = {"dates": [], "ranks": []}
                     products[name]["dates"].append(date)
                     products[name]["ranks"].append(rank)
 
-                fig = go.Figure()
-                for name, values in products.items():
-                    fig.add_trace(go.Scatter(
-                        x=values["dates"],
-                        y=values["ranks"],
-                        mode="lines+markers",
-                        name=name,
-                        line=dict(width=2),
-                        marker=dict(size=8)
-                    ))
+                if not products:
+                    st.warning("유효한 데이터가 없습니다.")
+                else:
+                    fig = go.Figure()
+                    for name, values in products.items():
+                        fig.add_trace(go.Scatter(
+                            x=values["dates"],
+                            y=values["ranks"],
+                            mode="lines+markers",
+                            name=name,
+                            line=dict(width=2),
+                            marker=dict(size=8)
+                        ))
 
-                fig.update_layout(
-                    title=f"'{graph_keyword}' 키워드 순위 변동 추이",
-                    xaxis_title="날짜",
-                    yaxis_title="순위",
-                    yaxis=dict(autorange="reversed"),
-                    height=500,
-                    hovermode="x unified",
-                    legend=dict(orientation="h", yanchor="bottom", y=-0.3)
-                )
+                    fig.update_layout(
+                        title=f"'{graph_keyword}' 키워드 순위 변동 추이",
+                        xaxis_title="날짜",
+                        yaxis_title="순위",
+                        yaxis=dict(autorange="reversed"),
+                        height=500,
+                        hovermode="x unified",
+                        legend=dict(orientation="h", yanchor="bottom", y=-0.3)
+                    )
 
-                st.plotly_chart(fig, use_container_width=True)
-                st.caption(f"총 {len(data)}개의 기록 데이터 기반")
+                    st.plotly_chart(fig, use_container_width=True)
+                    st.caption(f"총 {len(data)}개의 기록 데이터 기반")
 
 
 # =============================================
@@ -534,51 +545,68 @@ with tab3:
         keyword_status = []
         for kw in monitor_keywords:
             history = load_from_sheet(kw)
+
+            # 유효한 데이터만 필터링 (핵심 버그 수정)
+            history = [
+                r for r in history
+                if r.get("날짜") and str(r.get("순위", "")).strip()
+            ]
+
             if history:
-                # 최신 수집 데이터
-                latest_date = max(set(r["날짜"] for r in history))
-                latest_records = [r for r in history if r["날짜"] == latest_date]
-                best_rank_now = min(r["순위"] for r in latest_records)
+                try:
+                    # 최신 수집 데이터
+                    latest_date = max(set(r["날짜"] for r in history))
+                    latest_records = [r for r in history if r["날짜"] == latest_date]
+                    best_rank_now = min(int(r["순위"]) for r in latest_records)
 
-                # 이전 수집 데이터 (변동 계산용)
-                all_dates = sorted(set(r["날짜"] for r in history))
-                if len(all_dates) >= 2:
-                    prev_date = all_dates[-2]
-                    prev_records = [r for r in history if r["날짜"] == prev_date]
-                    best_rank_prev = min(r["순위"] for r in prev_records)
-                    change = best_rank_prev - best_rank_now  # 양수 = 순위 상승
-                else:
-                    best_rank_prev = None
-                    change = None
+                    # 이전 수집 데이터 (변동 계산용)
+                    all_dates = sorted(set(r["날짜"] for r in history))
+                    if len(all_dates) >= 2:
+                        prev_date = all_dates[-2]
+                        prev_records = [r for r in history if r["날짜"] == prev_date]
+                        best_rank_prev = min(int(r["순위"]) for r in prev_records)
+                        change = best_rank_prev - best_rank_now  # 양수 = 순위 상승
+                    else:
+                        change = None
 
-                # 상태 뱃지
-                if best_rank_now <= 50:
-                    status = "🟢 TOP 50"
-                elif best_rank_now <= 100:
-                    status = "🟡 TOP 100"
-                elif best_rank_now <= 200:
-                    status = "🟠 TOP 200"
-                else:
-                    status = "🔴 200위 밖"
+                    # 상태 뱃지
+                    if best_rank_now <= 50:
+                        status = "🟢 TOP 50"
+                    elif best_rank_now <= 100:
+                        status = "🟡 TOP 100"
+                    elif best_rank_now <= 200:
+                        status = "🟠 TOP 200"
+                    else:
+                        status = "🔴 200위 밖"
 
-                # 변동 표시
-                if change is None:
-                    change_str = "➖ 첫 수집"
-                elif change > 0:
-                    change_str = f"🔺 {change}위 상승"
-                elif change < 0:
-                    change_str = f"🔻 {abs(change)}위 하락"
-                else:
-                    change_str = "➡️ 변동 없음"
+                    # 변동 표시
+                    if change is None:
+                        change_str = "➖ 첫 수집"
+                    elif change > 0:
+                        change_str = f"🔺 {change}위 상승"
+                    elif change < 0:
+                        change_str = f"🔻 {abs(change)}위 하락"
+                    else:
+                        change_str = "➡️ 변동 없음"
 
-                keyword_status.append({
-                    "키워드": kw,
-                    "최고 순위": f"{best_rank_now}위",
-                    "전회 대비": change_str,
-                    "상태": status,
-                    "최근 수집일": latest_date,
-                    "노출 상품 수": len(latest_records)
-                })
+                    keyword_status.append({
+                        "키워드": kw,
+                        "최고 순위": f"{best_rank_now}위",
+                        "전회 대비": change_str,
+                        "상태": status,
+                        "최근 수집일": latest_date,
+                        "노출 상품 수": len(latest_records)
+                    })
+
+                except Exception as e:
+                    keyword_status.append({
+                        "키워드": kw,
+                        "최고 순위": "오류",
+                        "전회 대비": "➖",
+                        "상태": f"⚠️ 오류: {e}",
+                        "최근 수집일": "-",
+                        "노출 상품 수": 0
+                    })
             else:
                 keyword_status.append({
                     "키워드": kw,
@@ -626,14 +654,18 @@ with tab3:
 
             for idx, kw in enumerate(monitor_keywords):
                 overall_progress.progress(
-                    (idx) / total,
+                    idx / total,
                     text=f"🔍 [{idx+1}/{total}] '{kw}' 수색 중..."
                 )
 
                 found, prices, top100, err = collect_rank_data(kw, CLIENT_ID, CLIENT_SECRET)
 
                 if err:
-                    results_summary.append({"키워드": kw, "결과": f"❌ 오류: {err}", "발견 수": 0})
+                    results_summary.append({
+                        "키워드": kw,
+                        "결과": f"❌ 오류: {err}",
+                        "발견 수": 0
+                    })
                     continue
 
                 if found:
@@ -654,7 +686,6 @@ with tab3:
                 time.sleep(0.3)
 
             overall_progress.progress(1.0, text="✅ 전체 수색 완료!")
-
             st.success("🎉 일괄 수색 완료! 결과 요약:")
             df_result = pd.DataFrame(results_summary)
             st.dataframe(df_result, use_container_width=True, hide_index=True)
