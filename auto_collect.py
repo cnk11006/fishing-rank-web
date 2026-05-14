@@ -54,7 +54,7 @@ def save_to_sheet(sh, keyword, found_items):
     ws = get_or_create_worksheet(sh, keyword)
     existing = ws.get_all_values()
     if not existing:
-        ws.append_row(["날짜", "순위", "상품명", "판매처", "가격", "링크"])
+        ws.append_row(["날짜", "순위", "상품명", "판매처", "가격", "링크", "썸네일"])
     for item in found_items:
         ws.append_row([
             today,
@@ -62,7 +62,8 @@ def save_to_sheet(sh, keyword, found_items):
             item["상품명"],
             item["판매처"],
             item["가격"],
-            item["링크"]
+            item["링크"],
+            item.get("썸네일", "")
         ])
 
 
