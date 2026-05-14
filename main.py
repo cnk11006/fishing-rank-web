@@ -61,9 +61,16 @@ def save_to_sheet(keyword, found_items):
         sh = get_google_sheet()
         today = datetime.now().strftime("%Y-%m-%d %H:%M")
         worksheet = get_or_create_worksheet(sh, keyword)
-        existing = worksheet.get_all_values()
-        if not existing:
+
+        # ★ 핵심 수정: get_all_values() 대신 row_count로 정확히 판단
+        all_values = worksheet.get_all_values()
+        # 실제 데이터가 있는 행만 필터링
+        non_empty_rows = [row for row in all_values if any(cell.strip() for cell in row)]
+
+        if not non_empty_rows:
+            # 완전히 비어있을 때만 헤더 추가
             worksheet.append_row(["날짜", "순위", "상품명", "판매처", "가격", "링크", "썸네일"])
+
         for item in found_items:
             worksheet.append_row([
                 today,
@@ -78,24 +85,6 @@ def save_to_sheet(keyword, found_items):
     except Exception as e:
         st.error(f"구글 시트 저장 오류: {e}")
         return False
-
-
-def load_from_sheet(keyword, sh=None):
-    """sh 파라미터로 기존 연결 재사용 가능"""
-    try:
-        if sh is None:
-            sh = get_google_sheet()
-        try:
-            worksheet = sh.worksheet(keyword)
-            records = worksheet.get_all_records()
-            return [
-                r for r in records
-                if r.get("날짜") and str(r.get("순위", "")).strip() and r.get("상품명")
-            ]
-        except gspread.exceptions.WorksheetNotFound:
-            return []
-    except Exception:
-        return []
 
 
 # =============================================
