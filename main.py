@@ -60,7 +60,8 @@ def save_to_sheet(keyword, found_items):
         worksheet = get_or_create_worksheet(sh, keyword)
         existing = worksheet.get_all_values()
         if not existing:
-            worksheet.append_row(["날짜", "순위", "상품명", "판매처", "가격", "링크"])
+            # 썸네일 컬럼 추가
+            worksheet.append_row(["날짜", "순위", "상품명", "판매처", "가격", "링크", "썸네일"])
         for item in found_items:
             worksheet.append_row([
                 today,
@@ -68,7 +69,8 @@ def save_to_sheet(keyword, found_items):
                 item["상품명"],
                 item["판매처"],
                 item["가격"],
-                item["링크"]
+                item["링크"],
+                item.get("썸네일", "")
             ])
         return True
     except Exception as e:
@@ -210,7 +212,6 @@ def collect_rank_data(keyword, client_id, client_secret):
 # [5] 순위 변동 그래프 함수
 # =============================================
 def render_rank_graph(keyword):
-    """특정 키워드의 순위 변동 그래프를 렌더링"""
     data = load_from_sheet(keyword)
     if not data:
         st.info(f"'{keyword}' 키워드의 저장된 데이터가 없습니다. 먼저 수색을 진행해주세요!")
@@ -285,7 +286,6 @@ st.link_button(
     f"https://docs.google.com/spreadsheets/d/{SHEET_ID}",
 )
 
-# 탭 2개로 축소
 tab1, tab2 = st.tabs(["🔍 순위 수색", "📋 모니터링 관리"])
 
 
@@ -466,7 +466,7 @@ with tab1:
 
 
 # =============================================
-# TAB 2 - 모니터링 관리 (그래프 통합)
+# TAB 2 - 모니터링 관리
 # =============================================
 with tab2:
     st.subheader("📋 모니터링 키워드 관리")
@@ -476,9 +476,9 @@ with tab2:
     st.markdown("#### ➕ 키워드 등록")
     col_input, col_memo, col_btn = st.columns([2, 2, 1])
     with col_input:
-        new_keyword = st.text_input("키워드", placeholder="예: 검색할 키워드", label_visibility="collapsed")
+        new_keyword = st.text_input("키워드", placeholder="예: 타이라바 로드", label_visibility="collapsed")
     with col_memo:
-        new_memo = st.text_input("메모 (선택)", placeholder="예: 메모(입력안해도 됨)", label_visibility="collapsed")
+        new_memo = st.text_input("메모 (선택)", placeholder="예: 주력상품 키워드", label_visibility="collapsed")
     with col_btn:
         if st.button("➕ 등록", use_container_width=True):
             if not new_keyword:
@@ -494,7 +494,7 @@ with tab2:
 
     st.divider()
 
-    # --- 섹션 2: 등록된 키워드 목록 + 그래프 ---
+    # --- 섹션 2: 등록된 키워드 현황 (카드 형태) ---
     st.markdown("#### 📌 등록된 모니터링 키워드 현황")
 
     with st.spinner("목록 불러오는 중..."):
@@ -505,81 +505,101 @@ with tab2:
     else:
         st.caption(f"총 {len(monitor_keywords)}개 키워드 등록됨")
 
-        keyword_status = []
-        for kw in monitor_keywords:
-            history = load_from_sheet(kw)
-            history = [
-                r for r in history
-                if r.get("날짜") and str(r.get("순위", "")).strip()
-            ]
+        # 키워드별 카드 렌더링
+        COLS_PER_ROW = 4
+        for row_start in range(0, len(monitor_keywords), COLS_PER_ROW):
+            row_kws = monitor_keywords[row_start: row_start + COLS_PER_ROW]
+            cols = st.columns(COLS_PER_ROW)
+            for col, kw in zip(cols, row_kws):
+                with col:
+                    history = load_from_sheet(kw)
+                    history = [
+                        r for r in history
+                        if r.get("날짜") and str(r.get("순위", "")).strip()
+                    ]
 
-            if history:
-                try:
-                    latest_date = max(set(r["날짜"] for r in history))
-                    latest_records = [r for r in history if r["날짜"] == latest_date]
-                    best_rank_now = min(int(r["순위"]) for r in latest_records)
+                    # 썸네일 및 링크 추출 (최신 데이터 기준 최고순위 상품)
+                    thumbnail = ""
+                    link = ""
+                    best_rank_now = None
+                    change_str = "➖ 첫 수집"
+                    status = "⚪ 데이터 없음"
+                    latest_date = "-"
+                    product_name = "-"
 
-                    all_dates = sorted(set(r["날짜"] for r in history))
-                    if len(all_dates) >= 2:
-                        prev_date = all_dates[-2]
-                        prev_records = [r for r in history if r["날짜"] == prev_date]
-                        best_rank_prev = min(int(r["순위"]) for r in prev_records)
-                        change = best_rank_prev - best_rank_now
-                    else:
-                        change = None
+                    if history:
+                        try:
+                            latest_date = max(set(r["날짜"] for r in history))
+                            latest_records = [r for r in history if r["날짜"] == latest_date]
+                            best_record = min(latest_records, key=lambda x: int(x["순위"]))
+                            best_rank_now = int(best_record["순위"])
+                            product_name = best_record.get("상품명", "-")
+                            thumbnail = best_record.get("썸네일", "")
+                            link = best_record.get("링크", "")
 
-                    if best_rank_now <= 50:
-                        status = "🟢 TOP 50"
-                    elif best_rank_now <= 100:
-                        status = "🟡 TOP 100"
-                    elif best_rank_now <= 200:
-                        status = "🟠 TOP 200"
-                    else:
-                        status = "🔴 200위 밖"
+                            all_dates = sorted(set(r["날짜"] for r in history))
+                            if len(all_dates) >= 2:
+                                prev_date = all_dates[-2]
+                                prev_records = [r for r in history if r["날짜"] == prev_date]
+                                best_rank_prev = min(int(r["순위"]) for r in prev_records)
+                                change = best_rank_prev - best_rank_now
+                                if change > 0:
+                                    change_str = f"🔺 {change}위 상승"
+                                elif change < 0:
+                                    change_str = f"🔻 {abs(change)}위 하락"
+                                else:
+                                    change_str = "➡️ 변동 없음"
 
-                    if change is None:
-                        change_str = "➖ 첫 수집"
-                    elif change > 0:
-                        change_str = f"🔺 {change}위 상승"
-                    elif change < 0:
-                        change_str = f"🔻 {abs(change)}위 하락"
-                    else:
-                        change_str = "➡️ 변동 없음"
+                            if best_rank_now <= 50:
+                                status = "🟢 TOP 50"
+                            elif best_rank_now <= 100:
+                                status = "🟡 TOP 100"
+                            elif best_rank_now <= 200:
+                                status = "🟠 TOP 200"
+                            else:
+                                status = "🔴 200위 밖"
+                        except Exception:
+                            pass
 
-                    keyword_status.append({
-                        "키워드": kw,
-                        "최고 순위": f"{best_rank_now}위",
-                        "전회 대비": change_str,
-                        "상태": status,
-                        "최근 수집일": latest_date,
-                        "노출 상품 수": len(latest_records)
-                    })
-                except Exception as e:
-                    keyword_status.append({
-                        "키워드": kw,
-                        "최고 순위": "오류",
-                        "전회 대비": "➖",
-                        "상태": f"⚠️ 오류: {e}",
-                        "최근 수집일": "-",
-                        "노출 상품 수": 0
-                    })
-            else:
-                keyword_status.append({
-                    "키워드": kw,
-                    "최고 순위": "미수집",
-                    "전회 대비": "➖",
-                    "상태": "⚪ 데이터 없음",
-                    "최근 수집일": "-",
-                    "노출 상품 수": 0
-                })
+                    # 카드 UI 렌더링
+                    with st.container(border=True):
+                        # 썸네일
+                        if thumbnail:
+                            st.image(thumbnail, width=100)
+                        else:
+                            st.markdown(
+                                "<div style='height:100px; background:#f0f0f0;"
+                                "display:flex; align-items:center;"
+                                "justify-content:center; border-radius:8px;"
+                                "color:#999; font-size:12px;'>이미지 없음</div>",
+                                unsafe_allow_html=True
+                            )
 
-        # 현황 테이블
-        df_status = pd.DataFrame(keyword_status)
-        st.dataframe(df_status, use_container_width=True, hide_index=True)
+                        # 키워드명 (링크 클릭 시 상품 페이지 이동)
+                        if link:
+                            st.markdown(f"**[🔑 {kw}]({link})**")
+                        else:
+                            st.markdown(f"**🔑 {kw}**")
+
+                        # 상품명 (20자 제한)
+                        st.caption(
+                            f"📦 {product_name[:20]}..."
+                            if len(product_name) > 20
+                            else f"📦 {product_name}"
+                        )
+
+                        # 순위 및 변동
+                        if best_rank_now:
+                            st.markdown(f"🏆 **{best_rank_now}위** · {status}")
+                        else:
+                            st.markdown("🏆 **미수집**")
+
+                        st.caption(change_str)
+                        st.caption(f"🕐 {latest_date}")
 
         st.divider()
 
-        # --- 섹션 3: 키워드 선택 → 그래프 ---
+        # --- 섹션 3: 그래프 ---
         st.markdown("#### 📈 키워드별 순위 변동 그래프")
         selected_kw = st.selectbox(
             "그래프로 볼 키워드 선택",
