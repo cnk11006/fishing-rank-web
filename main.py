@@ -871,12 +871,12 @@ with tab3:
             # 엑셀 다운로드
             csv_data = df_results[["키워드", "PC 검색량", "모바일 검색량", "총 검색량", "경쟁강도"]].to_csv(
                 index=False, encoding="utf-8-sig"
-            )
+            ).encode("utf-8-sig")
             st.download_button(
                 label="📥 엑셀(CSV)로 다운로드",
                 data=csv_data,
                 file_name=f"{analysis_keyword}_키워드분석_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv",
+                mime="text/csv; charset=utf-8-sig",
                 use_container_width=True
             )
 
