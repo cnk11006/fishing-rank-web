@@ -54,18 +54,25 @@ def save_to_sheet(sh, keyword, found_items):
     ws = get_or_create_worksheet(sh, keyword)
     existing = ws.get_all_values()
     non_empty = [row for row in existing if any(cell.strip() for cell in row)]
+
     if not non_empty:
         ws.append_row(["날짜", "순위", "상품명", "판매처", "가격", "링크", "썸네일"])
-    for item in found_items:
-        ws.append_row([
+        time.sleep(1)
+
+    # ✅ 한 번에 전체 저장 (API 호출 횟수 최소화)
+    rows_to_add = [
+        [
             today,
             item["순위"],
             item["상품명"],
             item["판매처"],
             item["가격"],
             item["링크"],
-            item.get("썸네일", "")  # ✅ 썸네일 저장
-        ])
+            item.get("썸네일", "")
+        ]
+        for item in found_items
+    ]
+    ws.append_rows(rows_to_add, value_input_option="USER_ENTERED")
 
 
 def collect(keyword):
@@ -97,7 +104,7 @@ def collect(keyword):
                     "판매처": mall_name,
                     "가격": int(item.get("lprice", 0)),
                     "링크": item.get("link", ""),
-                    "썸네일": item.get("image", "")  # ✅ 썸네일 추가
+                    "썸네일": item.get("image", "")
                 })
         time.sleep(0.2)
     return found_items
@@ -124,6 +131,6 @@ if __name__ == "__main__":
                 print(f"  ✅ {len(found)}개 발견 (최고 {best}위) → 시트 저장 완료")
             else:
                 print(f"  ⚠️ 400위 내 미노출")
-            time.sleep(0.5)
+            time.sleep(2)  # ✅ 키워드 간 대기 시간 2초로 증가
 
-    print(f"\n✅ 전체 수집 완료: {datetime.now().strftime('%Y-%m-%d %H:%M')}")  # ✅ v 제거
+    print(f"\n✅ 전체 수집 완료: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
