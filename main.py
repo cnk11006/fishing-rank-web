@@ -281,18 +281,10 @@ def get_keyword_stats(keywords):
     all_results = []
 
     competition_map = {
-        "low": "🟢 낮음",
-        "mid": "🟡 중간",
-        "high": "🔴 높음",
-        "Low": "🟢 낮음",
-        "Mid": "🟡 중간",
-        "High": "🔴 높음",
-        "LOW": "🟢 낮음",
-        "MID": "🟡 중간",
-        "HIGH": "🔴 높음",
-        "낮음": "🟢 낮음",
-        "중간": "🟡 중간",
-        "높음": "🔴 높음",
+        "low": "🟢 낮음", "mid": "🟡 중간", "high": "🔴 높음",
+        "Low": "🟢 낮음", "Mid": "🟡 중간", "High": "🔴 높음",
+        "LOW": "🟢 낮음", "MID": "🟡 중간", "HIGH": "🔴 높음",
+        "낮음": "🟢 낮음", "중간": "🟡 중간", "높음": "🔴 높음",
     }
 
     for i in range(0, len(keywords), 5):
@@ -309,7 +301,6 @@ def get_keyword_stats(keywords):
                 for item in keyword_list:
                     monthly_pc = item.get("monthlyPcQcCnt", 0)
                     monthly_mobile = item.get("monthlyMobileQcCnt", 0)
-
                     try:
                         monthly_pc = int(monthly_pc)
                     except Exception:
@@ -318,10 +309,8 @@ def get_keyword_stats(keywords):
                         monthly_mobile = int(monthly_mobile)
                     except Exception:
                         monthly_mobile = 5
-
                     competition = item.get("compIdx", "")
                     competition_label = competition_map.get(competition, f"{competition}")
-
                     all_results.append({
                         "키워드": item.get("relKeyword", ""),
                         "PC 검색량": monthly_pc,
@@ -344,7 +333,7 @@ def get_keyword_stats(keywords):
 def render_rank_graph(keyword, sh=None):
     data = load_from_sheet(keyword, sh=sh)
     if not data:
-        st.info(f"'{keyword}' 키워드의 저장된 데이터가 없습니다. 먼저 수색을 진행해주세요!")
+        st.info(f"'{keyword}' 키워드의 저장된 데이터가 없습니다.")
         return
 
     products = {}
@@ -390,7 +379,281 @@ def render_rank_graph(keyword, sh=None):
 
 
 # =============================================
-# [7] 로그인 로직
+# [7] SEO 분석 함수 (규칙 기반)
+# =============================================
+def analyze_seo(keyword, product_name, related_keywords):
+    """네이버 쇼핑 SEO 기준으로 상품명 분석"""
+
+    issues = []
+    goods = []
+    score = 100
+
+    # 1. 상품명 길이 체크 (25~35자 권장)
+    name_len = len(product_name)
+    if name_len < 15:
+        issues.append(("❌ 상품명이 너무 짧아요", f"현재 {name_len}자 → 25~35자 권장"))
+        score -= 20
+    elif name_len > 50:
+        issues.append(("⚠️ 상품명이 너무 길어요", f"현재 {name_len}자 → 25~35자 권장, 핵심 키워드만 남기세요"))
+        score -= 10
+    else:
+        goods.append(f"✅ 상품명 길이 적정 ({name_len}자)")
+
+    # 2. 핵심 키워드 포함 여부
+    keyword_clean = keyword.replace(" ", "")
+    name_clean = product_name.replace(" ", "")
+    if keyword_clean in name_clean:
+        goods.append(f"✅ 핵심 키워드 '{keyword}' 포함됨")
+    else:
+        issues.append(("❌ 핵심 키워드 미포함", f"상품명에 '{keyword}' 키워드를 추가하세요"))
+        score -= 30
+
+    # 3. 특수문자 과다 사용 체크
+    special_chars = ['!', '@', '#', '$', '%', '^', '&', '*', '~', '+']
+    found_special = [c for c in product_name if c in special_chars]
+    if len(found_special) > 2:
+        issues.append(("⚠️ 특수문자 과다 사용", f"'{' '.join(set(found_special))}' → 네이버 검색 불이익 가능"))
+        score -= 10
+    else:
+        goods.append("✅ 특수문자 적정 사용")
+
+    # 4. 브랜드명(피싱템) 위치 체크
+    if product_name.startswith(TARGET_STORE):
+        issues.append(("⚠️ 브랜드명이 맨 앞에 위치", "핵심 키워드를 앞으로, 브랜드명은 뒤로 이동 권장"))
+        score -= 10
+    else:
+        goods.append("✅ 핵심 키워드 우선 배치")
+
+    # 5. 중복 단어 체크
+    words = product_name.split()
+    duplicates = [w for w in set(words) if words.count(w) > 1 and len(w) > 1]
+    if duplicates:
+        issues.append(("⚠️ 중복 단어 발견", f"'{', '.join(duplicates)}' → 중복 제거 권장"))
+        score -= 10
+    else:
+        goods.append("✅ 중복 단어 없음")
+
+    # 6. 연관 키워드 포함 여부 (검색량 상위 3개)
+    top_related = [r["키워드"] for r in related_keywords[:5] if r["키워드"] != keyword][:3]
+    included = []
+    not_included = []
+    for kw in top_related:
+        kw_clean = kw.replace(" ", "")
+        if kw_clean in name_clean:
+            included.append(kw)
+        else:
+            not_included.append(kw)
+
+    if included:
+        goods.append(f"✅ 연관 키워드 포함: {', '.join(included)}")
+    if not_included:
+        issues.append(("💡 추가 가능한 연관 키워드", f"'{', '.join(not_included)}' → 검색 노출 확대 가능"))
+
+    score = max(0, score)
+
+    # 추천 상품명 생성
+    recommended_name = generate_recommended_name(keyword, product_name, top_related)
+
+    return {
+        "score": score,
+        "issues": issues,
+        "goods": goods,
+        "recommended_name": recommended_name,
+        "related_keywords": top_related
+    }
+
+
+def generate_recommended_name(keyword, original_name, related_keywords):
+    """SEO 최적화된 추천 상품명 생성"""
+
+    # 브랜드명 제거 후 핵심만 추출
+    name_without_brand = original_name.replace(TARGET_STORE, "").strip()
+
+    # 핵심 키워드가 앞에 오도록 재구성
+    keyword_clean = keyword.replace(" ", "")
+    name_clean = name_without_brand.replace(" ", "")
+
+    if keyword_clean not in name_clean:
+        base = f"{keyword} {name_without_brand}"
+    else:
+        base = name_without_brand
+
+    # 연관 키워드 중 미포함된 것 추가 (전체 길이 35자 이내)
+    for kw in related_keywords:
+        kw_clean = kw.replace(" ", "")
+        base_clean = base.replace(" ", "")
+        if kw_clean not in base_clean and len(base) + len(kw) + 1 <= 35:
+            base = f"{base} {kw}"
+
+    # 브랜드명을 맨 뒤에 추가
+    if len(base) + len(TARGET_STORE) + 1 <= 40:
+        recommended = f"{base} {TARGET_STORE}".strip()
+    else:
+        recommended = base.strip()
+
+    return recommended
+
+
+# =============================================
+# [8] 상세 분석 패널 함수
+# =============================================
+def render_detail_panel(kw, history, sh):
+    """키워드 카드 클릭 시 펼쳐지는 상세 분석 패널"""
+
+    st.markdown(f"## 🔍 '{kw}' 상세 분석")
+    st.divider()
+
+    # ── 섹션 1: 순위 변동 그래프 ──
+    st.markdown("#### 📈 순위 변동 그래프")
+    render_rank_graph(kw, sh=sh)
+    st.divider()
+
+    # ── 섹션 2: 경쟁사 분석 ──
+    st.markdown("#### 🏆 현재 경쟁사 TOP 10 실시간 분석")
+
+    with st.spinner("🛰️ 경쟁사 데이터 수집 중..."):
+        found, price_list, top100, err = collect_rank_data(kw, CLIENT_ID, CLIENT_SECRET)
+
+    if err:
+        st.error(f"데이터 수집 오류: {err}")
+    else:
+        # 우리 상품 평균가
+        our_prices = [i["가격"] for i in found if i["가격"] > 0]
+        our_avg = int(sum(our_prices) / len(our_prices)) if our_prices else 0
+        avg_price = int(sum(price_list) / len(price_list)) if price_list else 0
+        our_best_rank = min(found, key=lambda x: x["순위"])["순위"] if found else None
+
+        # 요약 지표
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("피싱템 최고 순위", f"{our_best_rank}위" if our_best_rank else "미노출")
+        c2.metric("피싱템 평균가", f"{our_avg:,}원" if our_avg else "-")
+        c3.metric("시장 평균가", f"{avg_price:,}원" if avg_price else "-")
+        if our_avg and avg_price:
+            diff_pct = int((our_avg - avg_price) / avg_price * 100)
+            c4.metric(
+                "시장 대비 가격",
+                f"{abs(diff_pct)}% {'비쌈 📈' if diff_pct > 0 else '저렴 📉'}",
+                delta_color="inverse" if diff_pct > 0 else "normal"
+            )
+
+        st.markdown("**🥇 상위 10개 경쟁 상품**")
+        top10 = top100[:10]
+        for i, item in enumerate(top10):
+            is_ours = TARGET_STORE in item["판매처"] or TARGET_STORE in item["상품명"]
+            bg_color = "#e8f4fd" if is_ours else "#ffffff"
+            badge = "🎯 **우리 상품**" if is_ours else ""
+
+            with st.container():
+                col_img, col_info, col_price = st.columns([1, 5, 2])
+                with col_img:
+                    if item["썸네일"]:
+                        st.image(item["썸네일"], width=70)
+                with col_info:
+                    st.markdown(
+                        f"**{item['순위']}위** {badge}  \n"
+                        f"[{item['상품명'][:40]}]({item['링크']})  \n"
+                        f"🏪 {item['판매처']}"
+                    )
+                with col_price:
+                    price_diff = item["가격"] - avg_price if avg_price else 0
+                    diff_str = f"▲{abs(price_diff):,}원" if price_diff > 0 else f"▼{abs(price_diff):,}원"
+                    st.markdown(f"**{item['가격']:,}원**  \n{diff_str}")
+                st.markdown("---")
+
+    st.divider()
+
+    # ── 섹션 3: SEO 진단 ──
+    st.markdown("#### 🔍 SEO 진단 & 상품명 최적화 가이드")
+
+    if not found:
+        st.warning("피싱템 상품이 검색되지 않아 SEO 분석을 진행할 수 없습니다.")
+        return
+
+    # 분석할 상품 선택
+    product_options = [f"{i['순위']}위 - {i['상품명'][:30]}" for i in found]
+    selected_idx = st.selectbox(
+        "분석할 상품 선택",
+        range(len(product_options)),
+        format_func=lambda x: product_options[x],
+        key=f"seo_select_{kw}"
+    )
+    selected_product = found[selected_idx]
+
+    st.markdown(f"**현재 상품명:** `{selected_product['상품명']}`")
+    st.markdown(f"**현재 순위:** {selected_product['순위']}위 · **판매가:** {selected_product['가격']:,}원")
+
+    # 연관 키워드 가져오기
+    with st.spinner("📡 연관 키워드 분석 중..."):
+        related_kw_data = get_keyword_stats([kw])
+        related_kw_sorted = sorted(related_kw_data, key=lambda x: x["총 검색량"], reverse=True)
+
+    # SEO 분석 실행
+    seo_result = analyze_seo(kw, selected_product["상품명"], related_kw_sorted)
+
+    # SEO 점수 표시
+    score = seo_result["score"]
+    score_color = "🟢" if score >= 80 else "🟡" if score >= 60 else "🔴"
+    st.markdown(f"### {score_color} SEO 점수: **{score}점** / 100점")
+    st.progress(score / 100)
+
+    st.divider()
+
+    # 잘된 점
+    if seo_result["goods"]:
+        st.markdown("**✅ 잘된 점**")
+        for good in seo_result["goods"]:
+            st.markdown(f"- {good}")
+
+    # 개선 필요 항목
+    if seo_result["issues"]:
+        st.markdown("**⚠️ 개선 필요 항목**")
+        for title, desc in seo_result["issues"]:
+            st.markdown(f"- {title}: {desc}")
+
+    st.divider()
+
+    # 추천 상품명
+    st.markdown("**✏️ 추천 상품명 (SEO 최적화)**")
+    st.info(f"💡 {seo_result['recommended_name']}")
+    st.caption("※ 핵심 키워드 앞 배치 + 연관 키워드 포함 + 브랜드명 후미 배치 기준으로 생성됩니다.")
+
+    # 썸네일 최적화 가이드
+    st.divider()
+    st.markdown("**🖼️ 썸네일 최적화 가이드**")
+
+    thumb_col1, thumb_col2 = st.columns(2)
+    with thumb_col1:
+        st.markdown("**기본 원칙**")
+        st.markdown("""
+- ✅ 흰색 단색 배경 (네이버 쇼핑 노출 가산점)
+- ✅ 상품이 이미지의 70% 이상 차지
+- ✅ 정면 + 45도 앵글 컷 모두 등록
+- ❌ 워터마크/로고 과다 삽입 지양
+- ❌ 텍스트 도배형 이미지 지양
+        """)
+    with thumb_col2:
+        st.markdown("**클릭률 향상 팁**")
+        st.markdown("""
+- 💡 가격 강조 태그 삽입 (예: "최저가", "무료배송")
+- 💡 세트 구성품 전체를 펼쳐서 촬영
+- 💡 실제 사용 장면 이미지 추가 등록
+- 💡 색상 다양성 보여주는 컷 별도 등록
+- 💡 1:1 비율 정사각형 이미지 권장
+        """)
+
+    # 연관 키워드 추가 등록 가이드
+    st.divider()
+    st.markdown("**🔗 검색 노출 확대를 위한 추가 키워드**")
+    st.caption("아래 키워드들을 상품 태그 또는 상세페이지에 추가하면 노출 범위가 넓어집니다.")
+
+    if related_kw_sorted:
+        df_related = pd.DataFrame(related_kw_sorted[:10])[["키워드", "총 검색량", "경쟁강도"]]
+        df_related.index = df_related.index + 1
+        st.dataframe(df_related, use_container_width=True, hide_index=False)
+
+
+# =============================================
+# [9] 로그인 로직
 # =============================================
 if 'authenticated' not in st.session_state:
     st.session_state['authenticated'] = False
@@ -406,8 +669,9 @@ if not st.session_state['authenticated']:
             st.error("비밀번호가 틀렸습니다.")
     st.stop()
 
+
 # =============================================
-# [8] 메인 화면
+# [10] 메인 화면
 # =============================================
 st.title("🎣 피싱템 순위 레이더")
 
@@ -491,8 +755,6 @@ with tab1:
                         st.success("✅ 구글 시트에 자동 저장 완료!")
 
             avg_price = 0
-            min_price = 0
-            max_price = 0
             our_avg = 0
 
             if price_list:
@@ -626,10 +888,15 @@ with tab2:
 
     # --- 섹션 2: 등록된 키워드 현황 ---
     st.markdown("#### 📌 등록된 모니터링 키워드 현황")
+    st.caption("카드의 **🔍 상세분석** 버튼을 클릭하면 경쟁사 분석 + SEO 진단을 확인할 수 있습니다.")
 
     with st.spinner("목록 불러오는 중..."):
         sh = get_google_sheet()
         monitor_keywords = load_monitor_keywords(sh=sh)
+
+    # 상세분석 패널 상태 관리
+    if "detail_keyword" not in st.session_state:
+        st.session_state["detail_keyword"] = None
 
     if not monitor_keywords:
         st.info("등록된 키워드가 없습니다. 위에서 키워드를 등록해보세요!")
@@ -712,6 +979,31 @@ with tab2:
                         st.caption(change_str)
                         st.caption(f"🕐 {latest_date}")
 
+                        # ✅ 상세분석 버튼
+                        if st.button(
+                            "🔍 상세분석",
+                            key=f"detail_btn_{kw}",
+                            use_container_width=True
+                        ):
+                            if st.session_state["detail_keyword"] == kw:
+                                st.session_state["detail_keyword"] = None  # 토글 닫기
+                            else:
+                                st.session_state["detail_keyword"] = kw   # 토글 열기
+                            st.rerun()
+
+        # ✅ 상세분석 패널 (선택된 키워드가 있을 때만 표시)
+        if st.session_state["detail_keyword"]:
+            selected_kw = st.session_state["detail_keyword"]
+            st.divider()
+            with st.container(border=True):
+                close_col, _ = st.columns([1, 8])
+                with close_col:
+                    if st.button("✖ 닫기", key="close_detail"):
+                        st.session_state["detail_keyword"] = None
+                        st.rerun()
+                selected_history = load_from_sheet(selected_kw, sh=sh)
+                render_detail_panel(selected_kw, selected_history, sh)
+
         st.divider()
 
         # --- 섹션 3: 키워드 삭제 ---
@@ -752,11 +1044,7 @@ with tab2:
                 found, prices, top100, err = collect_rank_data(kw, CLIENT_ID, CLIENT_SECRET)
 
                 if err:
-                    results_summary.append({
-                        "키워드": kw,
-                        "결과": f"❌ 오류: {err}",
-                        "발견 수": 0
-                    })
+                    results_summary.append({"키워드": kw, "결과": f"❌ 오류: {err}", "발견 수": 0})
                     continue
 
                 if found:
@@ -768,11 +1056,7 @@ with tab2:
                         "발견 수": len(found)
                     })
                 else:
-                    results_summary.append({
-                        "키워드": kw,
-                        "결과": "⚠️ 400위 내 미노출",
-                        "발견 수": 0
-                    })
+                    results_summary.append({"키워드": kw, "결과": "⚠️ 400위 내 미노출", "발견 수": 0})
 
                 time.sleep(0.3)
 
@@ -790,14 +1074,14 @@ with tab2:
 
         # --- 섹션 5: 순위 변동 그래프 ---
         st.markdown("#### 📈 키워드별 순위 변동 그래프")
-        selected_kw = st.selectbox(
+        selected_kw_graph = st.selectbox(
             "그래프로 볼 키워드 선택",
             monitor_keywords,
             key="graph_select"
         )
         if st.button("📊 그래프 보기", use_container_width=True):
             with st.spinner("데이터 불러오는 중..."):
-                render_rank_graph(selected_kw, sh=sh)
+                render_rank_graph(selected_kw_graph, sh=sh)
 
 
 # =============================================
@@ -807,7 +1091,6 @@ with tab3:
     st.subheader("📊 키워드 분석")
     st.caption("네이버 광고 API 기반 키워드 검색량, 경쟁강도, 연관 키워드를 분석합니다.")
 
-    # --- 섹션 1: 키워드 기본 분석 ---
     st.markdown("#### 🔍 키워드 기본 분석")
     col_kw, col_btn = st.columns([4, 1])
     with col_kw:
@@ -837,7 +1120,6 @@ with tab3:
                 st.session_state["analysis_results"] = results
                 st.session_state["main_result"] = main_result
 
-    # 분석 결과 표시
     if "main_result" in st.session_state:
         main_result = st.session_state["main_result"]
         results = st.session_state["analysis_results"]
@@ -855,7 +1137,6 @@ with tab3:
 
         st.divider()
 
-        # --- 섹션 2: 연관 키워드 분석 테이블 ---
         st.markdown("#### 🔗 연관 키워드 분석")
         st.caption("검색량 높은 순으로 정렬됩니다.")
 
@@ -867,7 +1148,6 @@ with tab3:
             display_df = df_results[["키워드", "PC 검색량", "모바일 검색량", "총 검색량", "경쟁강도"]].copy()
             st.dataframe(display_df, use_container_width=True)
 
-            # 엑셀 다운로드
             csv_data = df_results[["키워드", "PC 검색량", "모바일 검색량", "총 검색량", "경쟁강도"]].to_csv(
                 index=False, encoding="utf-8-sig"
             ).encode("utf-8-sig")
