@@ -53,7 +53,8 @@ def save_to_sheet(sh, keyword, found_items):
     today = datetime.now().strftime("%Y-%m-%d %H:%M")
     ws = get_or_create_worksheet(sh, keyword)
     existing = ws.get_all_values()
-    if not existing:
+    non_empty = [row for row in existing if any(cell.strip() for cell in row)]
+    if not non_empty:
         ws.append_row(["날짜", "순위", "상품명", "판매처", "가격", "링크", "썸네일"])
     for item in found_items:
         ws.append_row([
@@ -63,7 +64,7 @@ def save_to_sheet(sh, keyword, found_items):
             item["판매처"],
             item["가격"],
             item["링크"],
-            item.get("썸네일", "")
+            item.get("썸네일", "")  # ✅ 썸네일 저장
         ])
 
 
@@ -95,7 +96,8 @@ def collect(keyword):
                     "상품명": clean_title,
                     "판매처": mall_name,
                     "가격": int(item.get("lprice", 0)),
-                    "링크": item.get("link", "")
+                    "링크": item.get("link", ""),
+                    "썸네일": item.get("image", "")  # ✅ 썸네일 추가
                 })
         time.sleep(0.2)
     return found_items
@@ -124,4 +126,4 @@ if __name__ == "__main__":
                 print(f"  ⚠️ 400위 내 미노출")
             time.sleep(0.5)
 
-    print(f"\n✅ 전체 수집 완료: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print(f"\n✅ 전체 수집 완료: {datetime.now().strftime('%Y-%m-%d %H:%M')}")  # ✅ v 제거
