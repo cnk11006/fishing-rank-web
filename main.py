@@ -665,28 +665,31 @@ if not st.session_state['authenticated']:
 # =============================================
 # [9] 메인 화면 디자인 & 로고 설정
 # =============================================
-# 💡 로고와 텍스트를 HTML로 완전히 묶어서 간격을 완벽하게 밀착!
 import base64
 import os
 
+# 💡 텍스트를 삭제하고, 로고에 링크(href="?")를 걸어 클릭 시 메인으로 새로고침 되도록 설정
 if os.path.exists("logo.png"):
     with open("logo.png", "rb") as f:
         encoded_img = base64.b64encode(f.read()).decode()
-    # 로고 크기 150px, 오른쪽 여백(글씨와의 간격) 15px
-    img_html = f"<img src='data:image/png;base64,{encoded_img}' style='width: 150px; margin-right: 12px;'>"
-else:
-    img_html = "<div style='font-size: 70px; margin-right: 15px;'>🎣</div>"
-
-# display: flex 와 align-items: center 로 수직 중앙 정렬 완벽 적용
-st.markdown(
-    f"""
-    <div style='display: flex; align-items: center; margin-bottom: 20px;'>
-        {img_html}
-        <div style='color: #1E3A8A; font-size: 26px; font-weight: 800; letter-spacing: -1px;'>순위 검색기</div>
+    
+    html_code = f"""
+    <div style='margin-bottom: 20px;'>
+        <a href="?" target="_self" title="초기 화면으로 돌아가기">
+            <img src='data:image/png;base64,{encoded_img}' style='width: 140px; cursor: pointer; transition: transform 0.2s;' onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+        </a>
     </div>
-    """,
-    unsafe_allow_html=True
-)
+    """
+else:
+    html_code = """
+    <div style='margin-bottom: 20px;'>
+        <a href="?" target="_self" style="text-decoration: none;" title="초기 화면으로 돌아가기">
+            <div style='font-size: 70px; cursor: pointer;'>🎣</div>
+        </a>
+    </div>
+    """
+
+st.markdown(html_code, unsafe_allow_html=True)
 
 st.link_button(
     "📊 구글 시트에서 전체 기록 보기",
@@ -694,7 +697,7 @@ st.link_button(
 )
 st.markdown("<br>", unsafe_allow_html=True)
 
-tab1, tab2, tab3 = st.tabs(["🔍 순위 수색", "📋 모니터링 관리", "📊 키워드 분석"])
+tab1, tab2, tab3 = st.tabs(["🔍 순위 검색", "📋 모니터링 관리", "📊 키워드 분석"])
 
 # =============================================
 # TAB 1 - 순위 수색
