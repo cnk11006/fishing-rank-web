@@ -18,7 +18,7 @@ import os
 # =============================================
 # [0] 페이지 설정 및 모던 CSS 디자인 적용
 # =============================================
-st.set_page_config(page_title="피싱템 순위 추적기", layout="wide", page_icon="🎣")
+st.set_page_config(page_title="피싱템 순위 검색기", layout="wide", page_icon="🎣")
 
 # CSS 주입 (깔끔하고 모던한 UI 만들기)
 st.markdown("""
