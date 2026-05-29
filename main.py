@@ -662,19 +662,19 @@ if not st.session_state['authenticated']:
             st.error("비밀번호가 틀렸습니다.")
     st.stop()
 
-
 # =============================================
 # [9] 메인 화면 디자인 & 로고 설정
 # =============================================
-# 로고 영역 (logo.png 가 있으면 표시, 없으면 이모지 표시)
-col_logo, col_title = st.columns([1, 15])
+# 💡 로고 영역을 넓히고 이미지 크기 확대
+col_logo, col_title = st.columns([2, 10]) 
 with col_logo:
     if os.path.exists("logo.png"):
-        st.image("logo.png", width=60)
+        st.image("logo.png", width=140)  # 기존 60에서 140으로 2배 이상 확대
     else:
-        st.markdown("<div style='font-size:45px; text-align:center;'>🎣</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:70px; text-align:center;'>🎣</div>", unsafe_allow_html=True)
 with col_title:
-    st.markdown("<h1 style='color: #1E3A8A; margin-top: 10px;'>피싱템 순위 레이더</h1>", unsafe_allow_html=True)
+    # 💡 무조건 컸던 h1 태그 대신 폰트 사이즈를 34px로 줄이고, 위쪽 여백(margin-top)을 주어 로고와 높낮이를 맞춤
+    st.markdown("<div style='color: #1E3A8A; font-size: 34px; font-weight: 800; margin-top: 40px; letter-spacing: -1px;'>피싱템 순위 레이더</div>", unsafe_allow_html=True)
 
 st.link_button(
     "📊 구글 시트에서 전체 기록 보기",
@@ -683,7 +683,6 @@ st.link_button(
 st.markdown("<br>", unsafe_allow_html=True)
 
 tab1, tab2, tab3 = st.tabs(["🔍 순위 수색", "📋 모니터링 관리", "📊 키워드 분석"])
-
 
 # =============================================
 # TAB 1 - 순위 수색
