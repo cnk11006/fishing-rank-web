@@ -676,6 +676,12 @@ tab1, tab2, tab3 = st.tabs(["🔍 순위 수색", "📋 모니터링 관리", "�
 with tab1:
     keyword = st.text_input("수색할 키워드를 입력하세요 (예: 타이라바 로드)")
 
+    # 💡 검색 결과를 유지하기 위한 세션 상태 초기화
+    if "search_results" not in st.session_state:
+        st.session_state["search_results"] = None
+    if "search_keyword" not in st.session_state:
+        st.session_state["search_keyword"] = ""
+
     if st.button("🚀 400위까지 정밀 수색 시작"):
         if not keyword:
             st.warning("키워드를 입력해주세요.")
@@ -741,82 +747,98 @@ with tab1:
                     if save_to_sheet(keyword, found_items):
                         st.success("✅ 구글 시트에 자동 저장 완료!")
 
-            avg_price = 0
-            our_avg = 0
+            # 💡 검색 완료 후 데이터를 세션에 저장
+            st.session_state["search_keyword"] = keyword
+            st.session_state["search_results"] = {
+                "found_items": found_items,
+                "price_list": price_list,
+                "top100_items": top100_items
+            }
 
-            if price_list:
-                min_price = min(price_list)
-                max_price = max(price_list)
-                avg_price = int(sum(price_list) / len(price_list))
-                our_prices = [i["가격"] for i in found_items if i["가격"] > 0]
-                our_avg = int(sum(our_prices) / len(our_prices)) if our_prices else 0
-                diff_pct = int((our_avg - avg_price) / avg_price * 100) if avg_price > 0 else 0
-                diff_label = (
-                    f"시장 평균보다 {abs(diff_pct)}% "
-                    f"{'💸 비쌈' if diff_pct > 0 else '✅ 저렴'}"
+    # 💡 세션에 검색 결과가 있으면 버튼 밖에서도 화면을 유지해서 그려줌
+    if st.session_state["search_results"] is not None:
+        saved_kw = st.session_state["search_keyword"]
+        found_items = st.session_state["search_results"]["found_items"]
+        price_list = st.session_state["search_results"]["price_list"]
+        top100_items = st.session_state["search_results"]["top100_items"]
+
+        avg_price = 0
+        our_avg = 0
+
+        if price_list:
+            min_price = min(price_list)
+            max_price = max(price_list)
+            avg_price = int(sum(price_list) / len(price_list))
+            our_prices = [i["가격"] for i in found_items if i["가격"] > 0]
+            our_avg = int(sum(our_prices) / len(our_prices)) if our_prices else 0
+            diff_pct = int((our_avg - avg_price) / avg_price * 100) if avg_price > 0 else 0
+            diff_label = (
+                f"시장 평균보다 {abs(diff_pct)}% "
+                f"{'💸 비쌈' if diff_pct > 0 else '✅ 저렴'}"
+            )
+
+            if found_items:
+                best_rank = min(found_items, key=lambda x: x["순위"])["순위"]
+                st.info(
+                    f"**'{saved_kw}'** 키워드 · 피싱템 **{len(found_items)}개** 노출 중 · "
+                    f"최고 순위 **{best_rank}위** · {diff_label}"
                 )
 
-                if found_items:
-                    best_rank = min(found_items, key=lambda x: x["순위"])["순위"]
-                    st.info(
-                        f"**'{keyword}'** 키워드 · 피싱템 **{len(found_items)}개** 노출 중 · "
-                        f"최고 순위 **{best_rank}위** · {diff_label}"
+            st.subheader("💰 키워드 시장 가격 분석 (1위 ~ 100위 기준)")
+            col1, col2, col3, col4, col5 = st.columns(5)
+            col1.metric("최저가", f"{min_price:,}원")
+            col2.metric("평균 판매가", f"{avg_price:,}원")
+            col3.metric("최고가", f"{max_price:,}원")
+            col4.metric("피싱템 평균가", f"{our_avg:,}원")
+            col5.metric(
+                "시장 평균 대비",
+                f"{abs(diff_pct)}% {'↑' if diff_pct > 0 else '↓'}",
+                delta=f"{'비쌈' if diff_pct > 0 else '저렴'}",
+                delta_color="inverse" if diff_pct > 0 else "normal"
+            )
+
+            st.markdown("**📊 가격대별 상품 분포 (1위 ~ 100위)**")
+            ranges = {
+                "1만원 이하": len([p for p in price_list if p <= 10000]),
+                "1만 ~ 3만원": len([p for p in price_list if 10000 < p <= 30000]),
+                "3만 ~ 5만원": len([p for p in price_list if 30000 < p <= 50000]),
+                "5만원 이상": len([p for p in price_list if p > 50000]),
+            }
+            rc1, rc2, rc3, rc4 = st.columns(4)
+            for col, (label, count) in zip([rc1, rc2, rc3, rc4], ranges.items()):
+                col.metric(label, f"{count}개")
+
+            st.divider()
+
+            st.subheader("🏅 최저가 TOP 5 (1위 ~ 100위 기준)")
+            top5 = sorted(top100_items, key=lambda x: x["가격"])[:5]
+            t_cols = st.columns(5)
+            for i, (col, item) in enumerate(zip(t_cols, top5)):
+                with col:
+                    if item["썸네일"]:
+                        st.image(item["썸네일"], width=120)
+                    medal = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"][i]
+                    st.markdown(f"**{medal} {item['가격']:,}원**")
+                    st.markdown(
+                        f"[{item['상품명'][:20]}...]({item['링크']})"
+                        if len(item['상품명']) > 20
+                        else f"[{item['상품명']}]({item['링크']})"
                     )
+                    st.caption(f"검색 {item['순위']}위 · {item['판매처']}")
 
-                st.subheader("💰 키워드 시장 가격 분석 (1위 ~ 100위 기준)")
-                col1, col2, col3, col4, col5 = st.columns(5)
-                col1.metric("최저가", f"{min_price:,}원")
-                col2.metric("평균 판매가", f"{avg_price:,}원")
-                col3.metric("최고가", f"{max_price:,}원")
-                col4.metric("피싱템 평균가", f"{our_avg:,}원")
-                col5.metric(
-                    "시장 평균 대비",
-                    f"{abs(diff_pct)}% {'↑' if diff_pct > 0 else '↓'}",
-                    delta=f"{'비쌈' if diff_pct > 0 else '저렴'}",
-                    delta_color="inverse" if diff_pct > 0 else "normal"
-                )
+            st.divider()
 
-                st.markdown("**📊 가격대별 상품 분포 (1위 ~ 100위)**")
-                ranges = {
-                    "1만원 이하": len([p for p in price_list if p <= 10000]),
-                    "1만 ~ 3만원": len([p for p in price_list if 10000 < p <= 30000]),
-                    "3만 ~ 5만원": len([p for p in price_list if 30000 < p <= 50000]),
-                    "5만원 이상": len([p for p in price_list if p > 50000]),
-                }
-                rc1, rc2, rc3, rc4 = st.columns(4)
-                for col, (label, count) in zip([rc1, rc2, rc3, rc4], ranges.items()):
-                    col.metric(label, f"{count}개")
-
-                st.divider()
-
-                st.subheader("🏅 최저가 TOP 5 (1위 ~ 100위 기준)")
-                top5 = sorted(top100_items, key=lambda x: x["가격"])[:5]
-                t_cols = st.columns(5)
-                for i, (col, item) in enumerate(zip(t_cols, top5)):
-                    with col:
-                        if item["썸네일"]:
-                            st.image(item["썸네일"], width=120)
-                        medal = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"][i]
-                        st.markdown(f"**{medal} {item['가격']:,}원**")
-                        st.markdown(
-                            f"[{item['상품명'][:20]}...]({item['링크']})"
-                            if len(item['상품명']) > 20
-                            else f"[{item['상품명']}]({item['링크']})"
-                        )
-                        st.caption(f"검색 {item['순위']}위 · {item['판매처']}")
-
-                st.divider()
-
-            if not found_items:
-                st.error(f"⚠️ 현재 '{TARGET_STORE}' 상품이 400위 내에 비노출 중입니다.")
-            else:
-                st.success(f"✅ 400위 내에서 총 {len(found_items)}개의 자사 상품을 발견했습니다!")
-                
-                st.markdown("### 📌 선택 상품 모니터링 바로 등록")
-                st.caption("아래 목록에서 모니터링할 상품을 체크한 뒤 등록 버튼을 누르시면 관리 탭으로 연동됩니다.")
-                
-                selected_products = []
-                
+        if not found_items:
+            st.error(f"⚠️ 현재 '{TARGET_STORE}' 상품이 400위 내에 비노출 중입니다.")
+        else:
+            st.success(f"✅ 400위 내에서 총 {len(found_items)}개의 자사 상품을 발견했습니다!")
+            
+            st.markdown("### 📌 선택 상품 모니터링 바로 등록")
+            st.caption("아래 목록에서 모니터링할 상품을 체크한 뒤 등록 버튼을 누르시면 관리 탭으로 연동됩니다.")
+            
+            # 💡 st.form으로 묶어서 체크박스를 클릭해도 새로고침 되지 않도록 방지!
+            with st.form("add_monitor_form"):
+                checked_items = {}
                 COLS_PER_ROW = 3
                 for row_start in range(0, len(found_items), COLS_PER_ROW):
                     row_items = found_items[row_start: row_start + COLS_PER_ROW]
@@ -837,10 +859,12 @@ with tab1:
                                 st.markdown(f"### 🏆 {item['순위']}위")
                                 st.markdown(f"**[{item['상품명']}]({item['링크']})**")
                                 
-                                is_checked = st.checkbox(f"모니터링 담기", key=f"chk_{item['순위']}_{item['상품명'][:5]}")
-                                if is_checked:
-                                    selected_products.append(item['상품명'])
-                                    
+                                # 체크박스 렌더링 (결과는 딕셔너리에 저장)
+                                checked_items[item['상품명']] = st.checkbox(
+                                    f"모니터링 담기", 
+                                    key=f"chk_{item['순위']}_{item['상품명'][:5]}"
+                                )
+                                
                                 st.caption(f"🏪 판매처: {item['판매처']}")
                                 if item["가격"] > 0 and avg_price > 0:
                                     diff = int((item["가격"] - avg_price) / avg_price * 100)
@@ -852,15 +876,19 @@ with tab1:
                                     st.caption(f"💴 판매가: {item['가격']:,}원")
                                     st.caption(diff_str)
                 
-                if st.button("🚀 선택한 상품 모니터링 관리로 등록하기", type="primary", use_container_width=True):
+                # 폼 내부의 제출 버튼 (이 버튼을 눌러야만 코드가 실행됨)
+                submit_button = st.form_submit_button("🚀 선택한 상품 모니터링 관리로 등록하기", type="primary", use_container_width=True)
+                
+                if submit_button:
+                    selected_products = [name for name, is_checked in checked_items.items() if is_checked]
+                    
                     if not selected_products:
                         st.warning("선택된 상품이 없습니다. 체크박스를 선택해주세요.")
                     else:
                         memo_text = ", ".join(selected_products)[:40]
-                        success, msg = add_monitor_keyword(keyword, memo=f"등록상품: {memo_text}")
+                        success, msg = add_monitor_keyword(saved_kw, memo=f"등록상품: {memo_text}")
                         if success:
-                            st.success(f"✅ '{keyword}' 키워드가 모니터링 탭에 성공적으로 추가되었습니다!")
-                            # 데이터가 변경되었으므로 캐시 초기화
+                            st.success(f"✅ '{saved_kw}' 키워드가 모니터링 탭에 성공적으로 추가되었습니다!")
                             load_monitor_keywords.clear()
                             load_all_sheets_at_once.clear()
                             time.sleep(1)
