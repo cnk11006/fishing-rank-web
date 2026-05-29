@@ -12,6 +12,7 @@ import pandas as pd
 import hmac
 import hashlib
 import base64
+import urllib.parse
 
 # =============================================
 # [0] 페이지 설정
@@ -304,10 +305,10 @@ def get_keyword_stats(keywords):
     }
 
     for i in range(0, len(keywords), 5):
-        chunk = keywords[i:i+5]
+        # 💡 한글, 띄어쓰기, 특수문자가 깨지지 않도록 URL 인코딩 적용
+        chunk = [urllib.parse.quote(kw) for kw in keywords[i:i+5]]
         params = "&".join([f"hintKeywords={kw}" for kw in chunk])
         full_uri = f"{uri}?{params}&showDetail=1"
-        headers = get_ad_api_header("GET", uri)
 
         try:
             response = requests.get(base_url + full_uri, headers=headers)
@@ -1062,7 +1063,9 @@ with tab3:
                 results = get_keyword_stats([analysis_keyword])
 
             if not results:
-                st.error("데이터를 불러오지 못했습니다. API 키를 확인해주세요.")
+                st.error(f"⚠️ '{analysis_keyword}'에 대한 데이터를 네이버에서 찾을 수 없습니다.\n\n"
+                         "- 원인 1: 월간 검색량이 거의 없는 희귀 키워드\n"
+                         "- 원인 2: 네이버 광고 시스템에서 조회가 제한된 단어 (상표권, 금칙어 등)")
             else:
                 main_result = next(
                     (r for r in results if r["키워드"] == analysis_keyword),
