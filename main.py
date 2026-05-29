@@ -1,5 +1,5 @@
 # =============================================
-# 피싱템 순위 레이더 - 전체 코드 (최종 통합본)
+# 피싱템 순위 레이더 - 전체 코드 (키 에러 완벽 수정본)
 # =============================================
 
 import streamlit as st
@@ -12,7 +12,7 @@ import pandas as pd
 import hmac
 import hashlib
 import base64
-import urllib.parse  # URL 인코딩을 위한 모듈 추가
+import urllib.parse
 
 # =============================================
 # [0] 페이지 설정
@@ -270,7 +270,7 @@ def collect_rank_data(keyword, client_id, client_secret):
 
 
 # =============================================
-# [5] 네이버 광고 API 함수 (에러 수정본)
+# [5] 네이버 광고 API 함수
 # =============================================
 def get_ad_api_header(method, uri):
     timestamp = str(int(time.time() * 1000))
@@ -303,12 +303,9 @@ def get_keyword_stats(keywords):
     }
 
     for i in range(0, len(keywords), 5):
-        # 💡 한글/특수문자 인코딩 추가
         chunk = [urllib.parse.quote(kw) for kw in keywords[i:i+5]]
         params = "&".join([f"hintKeywords={kw}" for kw in chunk])
         full_uri = f"{uri}?{params}&showDetail=1"
-        
-        # 💡 headers 누락되었던 부분 수정 완료
         headers = get_ad_api_header("GET", uri)
 
         try:
@@ -444,7 +441,7 @@ def generate_recommended_name(keyword, original_name, selected_related_kws):
 
 
 # =============================================
-# [7] 상세 분석 패널 함수 (자동 지정 방식으로 수정)
+# [7] 상세 분석 패널 함수 
 # =============================================
 def render_detail_panel(kw, history, sh, target_name=None):
     st.markdown(f"## 🔍 '{kw}' 상세 분석")
@@ -504,7 +501,6 @@ def render_detail_panel(kw, history, sh, target_name=None):
         st.warning("피싱템 상품이 검색되지 않아 SEO 분석을 진행할 수 없습니다.")
         return
 
-    # 💡 콤보박스 지우고 등록된 target_name을 이용해 자동으로 선택
     selected_product = None
     if target_name:
         for item in found:
@@ -513,7 +509,7 @@ def render_detail_panel(kw, history, sh, target_name=None):
                 break
                 
     if not selected_product:
-        selected_product = found[0] # 해당 상품이 검색에 안 잡힐 경우, 자사 상품 중 가장 순위 높은 1순위로 대체
+        selected_product = found[0]
 
     st.markdown(f"**분석 대상 상품:** `{selected_product['상품명']}`")
     st.markdown(f"**현재 순위:** {selected_product['순위']}위 · **판매가:** {selected_product['가격']:,}원")
@@ -789,7 +785,7 @@ with tab1:
                                 
                                 checked_items[item['상품명']] = st.checkbox(
                                     f"모니터링 담기", 
-                                    key=f"chk_{item['순위']}_{item['상품명'][:5]}"
+                                    key=f"chk_{item['순위']}_{item['상품명'][:10]}"
                                 )
                                 
                                 st.caption(f"🏪 판매처: {item['판매처']}")
@@ -839,7 +835,6 @@ with tab2:
         sh = get_google_sheet()
         monitor_records = load_monitor_keywords(_sh=sh)
 
-    # 💡 고유 항목 식별을 위해 detail_item 으로 세션 관리 변경
     if "detail_item" not in st.session_state:
         st.session_state["detail_item"] = None
 
@@ -954,8 +949,8 @@ with tab2:
                         st.caption(change_str)
                         st.caption(f"🕐 {latest_date}")
 
-                        # 💡 상세분석 버튼 클릭 시 현재 항목(키워드+메모) 정보 전달
-                        if st.button("🔍 상세분석", key=f"detail_btn_{kw}_{memo[:5]}", use_container_width=True):
+                        # 💡 키 에러 수정한 부분 (memo[:5] 제거하고 memo 전체 사용)
+                        if st.button("🔍 상세분석", key=f"detail_btn_{kw}_{memo}", use_container_width=True):
                             current_detail = st.session_state.get("detail_item")
                             new_detail = f"{kw}|||{memo}"
                             if current_detail == new_detail:
@@ -965,7 +960,8 @@ with tab2:
                             st.rerun()
                         
                         unique_item_key = f"{kw}|||{memo}"
-                        is_delete_checked = st.checkbox("🗑️ 삭제 선택", key=f"del_chk_{kw}_{memo[:5]}")
+                        # 💡 키 에러 수정한 부분 (memo[:5] 제거하고 memo 전체 사용)
+                        is_delete_checked = st.checkbox("🗑️ 삭제 선택", key=f"del_chk_{kw}_{memo}")
                         if is_delete_checked:
                             selected_for_deletion.append(unique_item_key)
 
@@ -984,7 +980,6 @@ with tab2:
                     else:
                         st.error("삭제에 실패했습니다.")
 
-        # 💡 해당 항목 전용 상세분석 패널 띄우기
         if st.session_state.get("detail_item"):
             detail_val = st.session_state["detail_item"]
             if "|||" in detail_val:
@@ -992,7 +987,6 @@ with tab2:
             else:
                 selected_kw, selected_memo = detail_val, ""
                 
-            # 타겟 상품명 추출
             target_product_name = selected_memo.replace("등록상품:", "").strip() if selected_memo.startswith("등록상품:") else None
             
             st.divider()
@@ -1004,7 +998,6 @@ with tab2:
                         st.rerun()
                 selected_history = all_history.get(selected_kw, [])
                 
-                # 💡 선택한 상품 정보(target_product_name)를 함께 전달하여 자동으로 맞춰지게 함
                 render_detail_panel(selected_kw, selected_history, sh, target_product_name)
 
         st.divider()
