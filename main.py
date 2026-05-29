@@ -1,5 +1,5 @@
 # =============================================
-# 피싱템 순위 레이더 - 전체 코드 (특정 상품 추적 패치)
+# 피싱템 순위 레이더 - 전체 코드 (최종 통합본)
 # =============================================
 
 import streamlit as st
@@ -12,7 +12,7 @@ import pandas as pd
 import hmac
 import hashlib
 import base64
-import urllib.parse
+import urllib.parse  # URL 인코딩을 위한 모듈 추가
 
 # =============================================
 # [0] 페이지 설정
@@ -146,7 +146,7 @@ def load_all_sheets_at_once(_sh, keywords):
 
 
 # =============================================
-# [3] 모니터링 목록 관리 함수 (키워드+메모 동시 반환)
+# [3] 모니터링 목록 관리 함수 
 # =============================================
 MONITOR_SHEET_NAME = "📋 모니터링 목록"
 
@@ -162,7 +162,6 @@ def load_monitor_keywords(_sh=None):
             worksheet.append_row(["키워드", "등록일", "메모"])
             return []
         records = worksheet.get_all_records()
-        # 단순히 키워드만 반환하지 않고, 사전 형태로 반환
         return [{"키워드": r["키워드"], "메모": r.get("메모", "")} for r in records if r.get("키워드")]
     except Exception as e:
         st.error(f"모니터링 목록 불러오기 오류: {e}")
@@ -178,7 +177,6 @@ def add_monitor_keyword(keyword, memo=""):
             worksheet.append_row(["키워드", "등록일", "메모"])
         records = worksheet.get_all_records()
         
-        # 중복 체크: 키워드와 상품(메모)이 완전히 똑같은 경우만 중복으로 처리
         for r in records:
             if r["키워드"] == keyword and r.get("메모", "") == memo:
                 return False, "이미 등록된 키워드+상품 조합입니다."
@@ -272,7 +270,7 @@ def collect_rank_data(keyword, client_id, client_secret):
 
 
 # =============================================
-# [5] 네이버 광고 API 함수
+# [5] 네이버 광고 API 함수 (에러 수정본)
 # =============================================
 def get_ad_api_header(method, uri):
     timestamp = str(int(time.time() * 1000))
@@ -305,10 +303,13 @@ def get_keyword_stats(keywords):
     }
 
     for i in range(0, len(keywords), 5):
-        # 💡 한글, 띄어쓰기, 특수문자가 깨지지 않도록 URL 인코딩 적용
+        # 💡 한글/특수문자 인코딩 추가
         chunk = [urllib.parse.quote(kw) for kw in keywords[i:i+5]]
         params = "&".join([f"hintKeywords={kw}" for kw in chunk])
         full_uri = f"{uri}?{params}&showDetail=1"
+        
+        # 💡 headers 누락되었던 부분 수정 완료
+        headers = get_ad_api_header("GET", uri)
 
         try:
             response = requests.get(base_url + full_uri, headers=headers)
@@ -443,9 +444,9 @@ def generate_recommended_name(keyword, original_name, selected_related_kws):
 
 
 # =============================================
-# [7] 상세 분석 패널 함수 
+# [7] 상세 분석 패널 함수 (자동 지정 방식으로 수정)
 # =============================================
-def render_detail_panel(kw, history, sh):
+def render_detail_panel(kw, history, sh, target_name=None):
     st.markdown(f"## 🔍 '{kw}' 상세 분석")
     st.divider()
 
@@ -503,16 +504,18 @@ def render_detail_panel(kw, history, sh):
         st.warning("피싱템 상품이 검색되지 않아 SEO 분석을 진행할 수 없습니다.")
         return
 
-    product_options = [f"{i['순위']}위 - {i['상품명'][:30]}" for i in found]
-    selected_idx = st.selectbox(
-        "분석할 상품 선택",
-        range(len(product_options)),
-        format_func=lambda x: product_options[x],
-        key=f"seo_select_{kw}"
-    )
-    selected_product = found[selected_idx]
+    # 💡 콤보박스 지우고 등록된 target_name을 이용해 자동으로 선택
+    selected_product = None
+    if target_name:
+        for item in found:
+            if target_name == item['상품명'] or target_name in item['상품명']:
+                selected_product = item
+                break
+                
+    if not selected_product:
+        selected_product = found[0] # 해당 상품이 검색에 안 잡힐 경우, 자사 상품 중 가장 순위 높은 1순위로 대체
 
-    st.markdown(f"**현재 상품명:** `{selected_product['상품명']}`")
+    st.markdown(f"**분석 대상 상품:** `{selected_product['상품명']}`")
     st.markdown(f"**현재 순위:** {selected_product['순위']}위 · **판매가:** {selected_product['가격']:,}원")
 
     with st.spinner("📡 연관 키워드 분석 중..."):
@@ -809,7 +812,6 @@ with tab1:
                         st.warning("선택된 상품이 없습니다. 체크박스를 선택해주세요.")
                     else:
                         success_count = 0
-                        # 💡 핵심: 선택한 각 상품마다 개별적으로 등록 처리
                         for prod_name in selected_products:
                             memo_text = f"등록상품:{prod_name}"
                             success, msg = add_monitor_keyword(saved_kw, memo=memo_text)
@@ -837,8 +839,9 @@ with tab2:
         sh = get_google_sheet()
         monitor_records = load_monitor_keywords(_sh=sh)
 
-    if "detail_keyword" not in st.session_state:
-        st.session_state["detail_keyword"] = None
+    # 💡 고유 항목 식별을 위해 detail_item 으로 세션 관리 변경
+    if "detail_item" not in st.session_state:
+        st.session_state["detail_item"] = None
 
     selected_for_deletion = []
 
@@ -873,7 +876,6 @@ with tab2:
                             latest_date = max(set(r["날짜"] for r in history))
                             latest_records = [r for r in history if r["날짜"] == latest_date]
                             
-                            # 💡 핵심: 메모에 기록된 '특정 상품'만 필터링해서 순위 계산
                             target_records = latest_records
                             if memo.startswith("등록상품:"):
                                 target_name = memo.replace("등록상품:", "").strip()
@@ -881,7 +883,7 @@ with tab2:
                                 if filtered:
                                     target_records = filtered
                                 else:
-                                    target_records = [] # 해당 날짜에 지정 상품이 탑 400위 밖으로 밀려난 경우
+                                    target_records = []
                             
                             if target_records:
                                 best_record = min(target_records, key=lambda x: int(x["순위"]))
@@ -890,7 +892,6 @@ with tab2:
                                 thumbnail = best_record.get("썸네일", "")
                                 link = best_record.get("링크", "")
 
-                                # 이전 날짜 기록 비교 로직
                                 all_dates = sorted(set(r["날짜"] for r in history))
                                 if len(all_dates) >= 2:
                                     prev_date = all_dates[-2]
@@ -922,7 +923,6 @@ with tab2:
                                 else:
                                     status = "🔴 200위 밖"
                             else:
-                                # 특정 상품을 찾지 못한 경우
                                 product_name = memo.replace("등록상품:", "").strip() if memo.startswith("등록상품:") else "-"
                         except Exception:
                             pass
@@ -954,11 +954,14 @@ with tab2:
                         st.caption(change_str)
                         st.caption(f"🕐 {latest_date}")
 
+                        # 💡 상세분석 버튼 클릭 시 현재 항목(키워드+메모) 정보 전달
                         if st.button("🔍 상세분석", key=f"detail_btn_{kw}_{memo[:5]}", use_container_width=True):
-                            if st.session_state["detail_keyword"] == kw:
-                                st.session_state["detail_keyword"] = None
+                            current_detail = st.session_state.get("detail_item")
+                            new_detail = f"{kw}|||{memo}"
+                            if current_detail == new_detail:
+                                st.session_state["detail_item"] = None
                             else:
-                                st.session_state["detail_keyword"] = kw
+                                st.session_state["detail_item"] = new_detail
                             st.rerun()
                         
                         unique_item_key = f"{kw}|||{memo}"
@@ -981,17 +984,28 @@ with tab2:
                     else:
                         st.error("삭제에 실패했습니다.")
 
-        if st.session_state["detail_keyword"]:
-            selected_kw = st.session_state["detail_keyword"]
+        # 💡 해당 항목 전용 상세분석 패널 띄우기
+        if st.session_state.get("detail_item"):
+            detail_val = st.session_state["detail_item"]
+            if "|||" in detail_val:
+                selected_kw, selected_memo = detail_val.split("|||")
+            else:
+                selected_kw, selected_memo = detail_val, ""
+                
+            # 타겟 상품명 추출
+            target_product_name = selected_memo.replace("등록상품:", "").strip() if selected_memo.startswith("등록상품:") else None
+            
             st.divider()
             with st.container(border=True):
                 close_col, _ = st.columns([1, 8])
                 with close_col:
                     if st.button("✖ 닫기", key="close_detail"):
-                        st.session_state["detail_keyword"] = None
+                        st.session_state["detail_item"] = None
                         st.rerun()
                 selected_history = all_history.get(selected_kw, [])
-                render_detail_panel(selected_kw, selected_history, sh)
+                
+                # 💡 선택한 상품 정보(target_product_name)를 함께 전달하여 자동으로 맞춰지게 함
+                render_detail_panel(selected_kw, selected_history, sh, target_product_name)
 
         st.divider()
 
