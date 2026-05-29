@@ -1,5 +1,5 @@
 # =============================================
-# 피싱템 순위 레이더 - 전체 코드 (최종 수정본)
+# 피싱템 순위 레이더 - 전체 코드 (특정 상품 추적 패치)
 # =============================================
 
 import streamlit as st
@@ -36,7 +36,7 @@ except Exception:
     st.stop()
 
 # =============================================
-# [2] 구글 시트 연결 함수 (캐싱 적용 - 속도 향상)
+# [2] 구글 시트 연결 함수
 # =============================================
 @st.cache_resource
 def get_google_sheet():
@@ -87,61 +87,8 @@ def save_to_sheet(keyword, found_items):
         return False
 
 
-def load_from_sheet(keyword, sh=None):
-    try:
-        if sh is None:
-            sh = get_google_sheet()
-        try:
-            worksheet = sh.worksheet(keyword)
-            all_values = worksheet.get_all_values()
-            if not all_values:
-                return []
-            first_row = all_values[0]
-            has_header = any(cell in ["날짜", "순위", "상품명"] for cell in first_row)
-            if has_header:
-                header = first_row
-                data_rows = all_values[1:]
-            else:
-                data_rows = all_values
-                col_count = len(first_row)
-                if col_count >= 7:
-                    header = ["날짜", "순위", "상품명", "판매처", "가격", "링크", "썸네일"]
-                else:
-                    header = ["날짜", "순위", "상품명", "판매처", "가격", "링크"]
-            col_map = {name: i for i, name in enumerate(header)}
-
-            def get_val(row, col_name):
-                idx = col_map.get(col_name)
-                if idx is None or idx >= len(row):
-                    return ""
-                return row[idx]
-
-            records = []
-            for row in data_rows:
-                if not row or not any(row):
-                    continue
-                record = {
-                    "날짜":   get_val(row, "날짜"),
-                    "순위":   get_val(row, "순위"),
-                    "상품명": get_val(row, "상품명"),
-                    "판매처": get_val(row, "판매처"),
-                    "가격":   get_val(row, "가격"),
-                    "링크":   get_val(row, "링크"),
-                    "썸네일": get_val(row, "썸네일"),
-                }
-                if record["날짜"] and str(record["순위"]).strip() and record["상품명"]:
-                    records.append(record)
-            return records
-        except gspread.exceptions.WorksheetNotFound:
-            return []
-    except Exception:
-        return []
-
-
-# 데이터 로드 캐싱 적용 (_sh 언더바 적용하여 캐시 충돌 방지)
 @st.cache_data(ttl=300)
 def load_all_sheets_at_once(_sh, keywords):
-    """모든 키워드 데이터를 한 번에 로드 (API 호출 최소화)"""
     all_data = {}
     for kw in keywords:
         try:
@@ -188,8 +135,7 @@ def load_all_sheets_at_once(_sh, keywords):
                 if record["날짜"] and str(record["순위"]).strip() and record["상품명"]:
                     records.append(record)
             all_data[kw] = records
-            time.sleep(0.1) # 속도 개선을 위해 슬립 시간 단축
-
+            time.sleep(0.1)
         except gspread.exceptions.WorksheetNotFound:
             all_data[kw] = []
         except Exception:
@@ -199,11 +145,10 @@ def load_all_sheets_at_once(_sh, keywords):
 
 
 # =============================================
-# [3] 모니터링 목록 관리 함수
+# [3] 모니터링 목록 관리 함수 (키워드+메모 동시 반환)
 # =============================================
 MONITOR_SHEET_NAME = "📋 모니터링 목록"
 
-# 목록 불러오기 캐싱 적용
 @st.cache_data(ttl=300)
 def load_monitor_keywords(_sh=None):
     try:
@@ -216,7 +161,8 @@ def load_monitor_keywords(_sh=None):
             worksheet.append_row(["키워드", "등록일", "메모"])
             return []
         records = worksheet.get_all_records()
-        return [r["키워드"] for r in records if r.get("키워드")]
+        # 단순히 키워드만 반환하지 않고, 사전 형태로 반환
+        return [{"키워드": r["키워드"], "메모": r.get("메모", "")} for r in records if r.get("키워드")]
     except Exception as e:
         st.error(f"모니터링 목록 불러오기 오류: {e}")
         return []
@@ -230,9 +176,12 @@ def add_monitor_keyword(keyword, memo=""):
         if not existing:
             worksheet.append_row(["키워드", "등록일", "메모"])
         records = worksheet.get_all_records()
-        existing_keywords = [r["키워드"] for r in records]
-        if keyword in existing_keywords:
-            return False, "이미 등록된 키워드입니다."
+        
+        # 중복 체크: 키워드와 상품(메모)이 완전히 똑같은 경우만 중복으로 처리
+        for r in records:
+            if r["키워드"] == keyword and r.get("메모", "") == memo:
+                return False, "이미 등록된 키워드+상품 조합입니다."
+                
         today = datetime.now().strftime("%Y-%m-%d %H:%M")
         worksheet.append_row([keyword, today, memo])
         return True, "등록 완료"
@@ -240,23 +189,21 @@ def add_monitor_keyword(keyword, memo=""):
         return False, f"등록 오류: {e}"
 
 
-# 다중 삭제 기능으로 변경
-def delete_multiple_monitor_keywords(keywords_to_delete):
+def delete_multiple_monitor_keywords(items_to_delete):
     try:
         sh = get_google_sheet()
         worksheet = sh.worksheet(MONITOR_SHEET_NAME)
         records = worksheet.get_all_records()
         
-        # 삭제할 행 번호 찾기 (헤더가 있으므로 start=2)
         rows_to_delete = []
         for i, row in enumerate(records, start=2):
-            if row["키워드"] in keywords_to_delete:
+            unique_key = f"{row['키워드']}|||{row.get('메모', '')}"
+            if unique_key in items_to_delete:
                 rows_to_delete.append(i)
                 
-        # 아래 행부터 지워야 인덱스가 밀리지 않음
         for row_idx in sorted(rows_to_delete, reverse=True):
             worksheet.delete_rows(row_idx)
-            time.sleep(0.1) # API 오류 방지
+            time.sleep(0.1)
         return True
     except Exception as e:
         st.error(f"삭제 오류: {e}")
@@ -343,7 +290,6 @@ def get_ad_api_header(method, uri):
         "X-Signature": signature
     }
 
-# 광고 API 결과도 캐싱하여 속도 개선
 @st.cache_data(ttl=600)
 def get_keyword_stats(keywords):
     uri = "/keywordstool"
@@ -676,7 +622,6 @@ tab1, tab2, tab3 = st.tabs(["🔍 순위 수색", "📋 모니터링 관리", "�
 with tab1:
     keyword = st.text_input("수색할 키워드를 입력하세요 (예: 타이라바 로드)")
 
-    # 💡 검색 결과를 유지하기 위한 세션 상태 초기화
     if "search_results" not in st.session_state:
         st.session_state["search_results"] = None
     if "search_keyword" not in st.session_state:
@@ -747,7 +692,6 @@ with tab1:
                     if save_to_sheet(keyword, found_items):
                         st.success("✅ 구글 시트에 자동 저장 완료!")
 
-            # 💡 검색 완료 후 데이터를 세션에 저장
             st.session_state["search_keyword"] = keyword
             st.session_state["search_results"] = {
                 "found_items": found_items,
@@ -755,7 +699,6 @@ with tab1:
                 "top100_items": top100_items
             }
 
-    # 💡 세션에 검색 결과가 있으면 버튼 밖에서도 화면을 유지해서 그려줌
     if st.session_state["search_results"] is not None:
         saved_kw = st.session_state["search_keyword"]
         found_items = st.session_state["search_results"]["found_items"]
@@ -810,33 +753,14 @@ with tab1:
 
             st.divider()
 
-            st.subheader("🏅 최저가 TOP 5 (1위 ~ 100위 기준)")
-            top5 = sorted(top100_items, key=lambda x: x["가격"])[:5]
-            t_cols = st.columns(5)
-            for i, (col, item) in enumerate(zip(t_cols, top5)):
-                with col:
-                    if item["썸네일"]:
-                        st.image(item["썸네일"], width=120)
-                    medal = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"][i]
-                    st.markdown(f"**{medal} {item['가격']:,}원**")
-                    st.markdown(
-                        f"[{item['상품명'][:20]}...]({item['링크']})"
-                        if len(item['상품명']) > 20
-                        else f"[{item['상품명']}]({item['링크']})"
-                    )
-                    st.caption(f"검색 {item['순위']}위 · {item['판매처']}")
-
-            st.divider()
-
         if not found_items:
             st.error(f"⚠️ 현재 '{TARGET_STORE}' 상품이 400위 내에 비노출 중입니다.")
         else:
             st.success(f"✅ 400위 내에서 총 {len(found_items)}개의 자사 상품을 발견했습니다!")
             
             st.markdown("### 📌 선택 상품 모니터링 바로 등록")
-            st.caption("아래 목록에서 모니터링할 상품을 체크한 뒤 등록 버튼을 누르시면 관리 탭으로 연동됩니다.")
+            st.caption("아래 목록에서 모니터링할 상품을 체크한 뒤 등록 버튼을 누르시면 관리 탭으로 연동됩니다. (여러 개 동시 등록 가능)")
             
-            # 💡 st.form으로 묶어서 체크박스를 클릭해도 새로고침 되지 않도록 방지!
             with st.form("add_monitor_form"):
                 checked_items = {}
                 COLS_PER_ROW = 3
@@ -859,7 +783,6 @@ with tab1:
                                 st.markdown(f"### 🏆 {item['순위']}위")
                                 st.markdown(f"**[{item['상품명']}]({item['링크']})**")
                                 
-                                # 체크박스 렌더링 (결과는 딕셔너리에 저장)
                                 checked_items[item['상품명']] = st.checkbox(
                                     f"모니터링 담기", 
                                     key=f"chk_{item['순위']}_{item['상품명'][:5]}"
@@ -876,7 +799,6 @@ with tab1:
                                     st.caption(f"💴 판매가: {item['가격']:,}원")
                                     st.caption(diff_str)
                 
-                # 폼 내부의 제출 버튼 (이 버튼을 눌러야만 코드가 실행됨)
                 submit_button = st.form_submit_button("🚀 선택한 상품 모니터링 관리로 등록하기", type="primary", use_container_width=True)
                 
                 if submit_button:
@@ -885,16 +807,22 @@ with tab1:
                     if not selected_products:
                         st.warning("선택된 상품이 없습니다. 체크박스를 선택해주세요.")
                     else:
-                        memo_text = ", ".join(selected_products)[:40]
-                        success, msg = add_monitor_keyword(saved_kw, memo=f"등록상품: {memo_text}")
-                        if success:
-                            st.success(f"✅ '{saved_kw}' 키워드가 모니터링 탭에 성공적으로 추가되었습니다!")
+                        success_count = 0
+                        # 💡 핵심: 선택한 각 상품마다 개별적으로 등록 처리
+                        for prod_name in selected_products:
+                            memo_text = f"등록상품:{prod_name}"
+                            success, msg = add_monitor_keyword(saved_kw, memo=memo_text)
+                            if success:
+                                success_count += 1
+
+                        if success_count > 0:
+                            st.success(f"✅ 총 {success_count}개의 상품이 모니터링 탭에 성공적으로 추가되었습니다!")
                             load_monitor_keywords.clear()
                             load_all_sheets_at_once.clear()
                             time.sleep(1)
                             st.rerun()
                         else:
-                            st.error(f"오류: {msg}")
+                            st.warning("선택하신 상품들이 이미 등록되어 있거나 오류가 발생했습니다.")
 
 
 # =============================================
@@ -904,64 +832,38 @@ with tab2:
     st.subheader("📋 모니터링 키워드 관리")
     st.caption("등록된 키워드를 모니터링하거나 불필요한 키워드를 체크하여 일괄 삭제할 수 있습니다.")
 
-    st.markdown("#### ➕ 수동 키워드 추가 (옵션)")
-    with st.expander("키워드 직접 입력하여 등록하기"):
-        col_input, col_memo, col_btn = st.columns([2, 2, 1])
-        with col_input:
-            new_keyword = st.text_input("키워드", placeholder="예: 타이라바 로드", label_visibility="collapsed")
-        with col_memo:
-            new_memo = st.text_input("메모 (선택)", placeholder="예: 주력상품 키워드", label_visibility="collapsed")
-        with col_btn:
-            if st.button("➕ 수동 등록", use_container_width=True):
-                if not new_keyword:
-                    st.warning("키워드를 입력해주세요.")
-                else:
-                    with st.spinner("등록 중..."):
-                        success, msg = add_monitor_keyword(new_keyword.strip(), new_memo.strip())
-                    if success:
-                        st.success(f"✅ '{new_keyword}' 등록 완료!")
-                        # 데이터가 추가되었으므로 캐시 초기화
-                        load_monitor_keywords.clear()
-                        load_all_sheets_at_once.clear()
-                        time.sleep(1)
-                        st.rerun()
-                    else:
-                        st.error(msg)
-
-    st.divider()
-
-    st.markdown("#### 📌 등록된 모니터링 키워드 현황")
-    st.caption("삭제할 키워드의 하단 **[🗑️ 삭제 선택]**을 체크한 후 아래의 **삭제 버튼**을 눌러 일괄 제거하세요.")
-
     with st.spinner("목록 불러오는 중..."):
         sh = get_google_sheet()
-        monitor_keywords = load_monitor_keywords(_sh=sh)
+        monitor_records = load_monitor_keywords(_sh=sh)
 
     if "detail_keyword" not in st.session_state:
         st.session_state["detail_keyword"] = None
 
     selected_for_deletion = []
 
-    if not monitor_keywords:
-        st.info("등록된 키워드가 없습니다. [🔍 순위 수색] 탭에서 키워드를 검색 후 등록해보세요!")
+    if not monitor_records:
+        st.info("등록된 키워드가 없습니다. [🔍 순위 수색] 탭에서 키워드를 검색 후 특정 상품을 등록해보세요!")
     else:
-        st.caption(f"총 {len(monitor_keywords)}개 키워드 등록됨")
+        st.caption(f"총 {len(monitor_records)}개 항목 모니터링 중")
 
         with st.spinner("📊 순위 데이터 불러오는 중..."):
-            all_history = load_all_sheets_at_once(_sh=sh, keywords=monitor_keywords)
+            unique_kws = list(set(r["키워드"] for r in monitor_records))
+            all_history = load_all_sheets_at_once(_sh=sh, keywords=unique_kws)
 
         COLS_PER_ROW = 4
-        for row_start in range(0, len(monitor_keywords), COLS_PER_ROW):
-            row_kws = monitor_keywords[row_start: row_start + COLS_PER_ROW]
+        for row_start in range(0, len(monitor_records), COLS_PER_ROW):
+            row_recs = monitor_records[row_start: row_start + COLS_PER_ROW]
             cols = st.columns(COLS_PER_ROW)
-            for col, kw in zip(cols, row_kws):
+            for col, rec in zip(cols, row_recs):
                 with col:
+                    kw = rec["키워드"]
+                    memo = rec["메모"]
                     history = all_history.get(kw, [])
                     thumbnail = ""
                     link = ""
                     best_rank_now = None
                     change_str = "➖ 첫 수집"
-                    status = "⚪ 데이터 없음"
+                    status = "⚪ 순위권 밖 (미노출)"
                     latest_date = "-"
                     product_name = "-"
 
@@ -969,33 +871,58 @@ with tab2:
                         try:
                             latest_date = max(set(r["날짜"] for r in history))
                             latest_records = [r for r in history if r["날짜"] == latest_date]
-                            best_record = min(latest_records, key=lambda x: int(x["순위"]))
-                            best_rank_now = int(best_record["순위"])
-                            product_name = best_record.get("상품명", "-")
-                            thumbnail = best_record.get("썸네일", "")
-                            link = best_record.get("링크", "")
-
-                            all_dates = sorted(set(r["날짜"] for r in history))
-                            if len(all_dates) >= 2:
-                                prev_date = all_dates[-2]
-                                prev_records = [r for r in history if r["날짜"] == prev_date]
-                                best_rank_prev = min(int(r["순위"]) for r in prev_records)
-                                change = best_rank_prev - best_rank_now
-                                if change > 0:
-                                    change_str = f"🔺 {change}위 상승"
-                                elif change < 0:
-                                    change_str = f"🔻 {abs(change)}위 하락"
+                            
+                            # 💡 핵심: 메모에 기록된 '특정 상품'만 필터링해서 순위 계산
+                            target_records = latest_records
+                            if memo.startswith("등록상품:"):
+                                target_name = memo.replace("등록상품:", "").strip()
+                                filtered = [r for r in latest_records if target_name in r["상품명"]]
+                                if filtered:
+                                    target_records = filtered
                                 else:
-                                    change_str = "➡️ 변동 없음"
+                                    target_records = [] # 해당 날짜에 지정 상품이 탑 400위 밖으로 밀려난 경우
+                            
+                            if target_records:
+                                best_record = min(target_records, key=lambda x: int(x["순위"]))
+                                best_rank_now = int(best_record["순위"])
+                                product_name = best_record.get("상품명", "-")
+                                thumbnail = best_record.get("썸네일", "")
+                                link = best_record.get("링크", "")
 
-                            if best_rank_now <= 50:
-                                status = "🟢 TOP 50"
-                            elif best_rank_now <= 100:
-                                status = "🟡 TOP 100"
-                            elif best_rank_now <= 200:
-                                status = "🟠 TOP 200"
+                                # 이전 날짜 기록 비교 로직
+                                all_dates = sorted(set(r["날짜"] for r in history))
+                                if len(all_dates) >= 2:
+                                    prev_date = all_dates[-2]
+                                    prev_records = [r for r in history if r["날짜"] == prev_date]
+                                    prev_target_records = prev_records
+                                    if memo.startswith("등록상품:"):
+                                        prev_filtered = [r for r in prev_records if target_name in r["상품명"]]
+                                        if prev_filtered:
+                                            prev_target_records = prev_filtered
+                                        else:
+                                            prev_target_records = []
+
+                                    if prev_target_records:
+                                        best_rank_prev = min(int(r["순위"]) for r in prev_target_records)
+                                        change = best_rank_prev - best_rank_now
+                                        if change > 0:
+                                            change_str = f"🔺 {change}위 상승"
+                                        elif change < 0:
+                                            change_str = f"🔻 {abs(change)}위 하락"
+                                        else:
+                                            change_str = "➡️ 변동 없음"
+
+                                if best_rank_now <= 50:
+                                    status = "🟢 TOP 50"
+                                elif best_rank_now <= 100:
+                                    status = "🟡 TOP 100"
+                                elif best_rank_now <= 200:
+                                    status = "🟠 TOP 200"
+                                else:
+                                    status = "🔴 200위 밖"
                             else:
-                                status = "🔴 200위 밖"
+                                # 특정 상품을 찾지 못한 경우
+                                product_name = memo.replace("등록상품:", "").strip() if memo.startswith("등록상품:") else "-"
                         except Exception:
                             pass
 
@@ -1022,32 +949,30 @@ with tab2:
                         if best_rank_now:
                             st.markdown(f"🏆 **{best_rank_now}위** · {status}")
                         else:
-                            st.markdown("🏆 **미수집**")
+                            st.markdown("🏆 **순위 밖 (미수집)**")
                         st.caption(change_str)
                         st.caption(f"🕐 {latest_date}")
 
-                        if st.button("🔍 상세분석", key=f"detail_btn_{kw}", use_container_width=True):
+                        if st.button("🔍 상세분석", key=f"detail_btn_{kw}_{memo[:5]}", use_container_width=True):
                             if st.session_state["detail_keyword"] == kw:
                                 st.session_state["detail_keyword"] = None
                             else:
                                 st.session_state["detail_keyword"] = kw
                             st.rerun()
                         
-                        # 체크박스로 삭제할 키워드 선택
-                        is_delete_checked = st.checkbox("🗑️ 삭제 선택", key=f"del_chk_{kw}")
+                        unique_item_key = f"{kw}|||{memo}"
+                        is_delete_checked = st.checkbox("🗑️ 삭제 선택", key=f"del_chk_{kw}_{memo[:5]}")
                         if is_delete_checked:
-                            selected_for_deletion.append(kw)
+                            selected_for_deletion.append(unique_item_key)
 
-        # 체크박스 다중 삭제 실행 버튼
         st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("🗑️ 선택한 모니터링 키워드 일괄 삭제", type="secondary"):
+        if st.button("🗑️ 선택한 모니터링 상품 일괄 삭제", type="secondary"):
             if not selected_for_deletion:
-                st.warning("삭제할 키워드를 선택해주세요.")
+                st.warning("삭제할 상품을 선택해주세요.")
             else:
                 with st.spinner("삭제 중..."):
                     if delete_multiple_monitor_keywords(selected_for_deletion):
-                        st.success(f"✅ {len(selected_for_deletion)}개 키워드가 모니터링 목록에서 삭제되었습니다!")
-                        # 캐시 초기화로 화면 즉시 갱신
+                        st.success(f"✅ 선택한 상품이 모니터링 목록에서 삭제되었습니다!")
                         load_monitor_keywords.clear()
                         load_all_sheets_at_once.clear()
                         time.sleep(1)
@@ -1055,7 +980,6 @@ with tab2:
                     else:
                         st.error("삭제에 실패했습니다.")
 
-        # 상세분석 패널
         if st.session_state["detail_keyword"]:
             selected_kw = st.session_state["detail_keyword"]
             st.divider()
@@ -1070,16 +994,15 @@ with tab2:
 
         st.divider()
 
-        # --- 섹션 4: 전체 일괄 수색 ---
         st.markdown("#### 🚀 등록 키워드 전체 일괄 수색")
         st.caption("등록된 모든 키워드를 순서대로 수색하고 결과를 구글 시트에 즉시 저장합니다.")
 
         if st.button("🛰️ 전체 키워드 일괄 수색 시작", type="primary", use_container_width=True):
-            total = len(monitor_keywords)
+            total = len(unique_kws)
             overall_progress = st.progress(0, text="준비 중...")
             results_summary = []
 
-            for idx, kw in enumerate(monitor_keywords):
+            for idx, kw in enumerate(unique_kws):
                 overall_progress.progress(
                     idx / total,
                     text=f"🔍 [{idx+1}/{total}] '{kw}' 수색 중..."
@@ -1108,7 +1031,6 @@ with tab2:
             df_result = pd.DataFrame(results_summary)
             st.dataframe(df_result, use_container_width=True, hide_index=True)
 
-            # 수색 완료 후 새로운 데이터 반영을 위해 캐시 비우기
             load_all_sheets_at_once.clear()
             time.sleep(1)
             st.rerun()
