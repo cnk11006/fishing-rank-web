@@ -1,5 +1,5 @@
 # =============================================
-# 피싱템 순위 레이더 - 전체 코드 (키 에러 완벽 수정본)
+# 피싱템 순위 레이더 - 전체 코드 (모던 UI & 로고 추가본)
 # =============================================
 
 import streamlit as st
@@ -13,11 +13,70 @@ import hmac
 import hashlib
 import base64
 import urllib.parse
+import os
 
 # =============================================
-# [0] 페이지 설정
+# [0] 페이지 설정 및 모던 CSS 디자인 적용
 # =============================================
-st.set_page_config(page_title="피싱템 순위 추적기", layout="wide")
+st.set_page_config(page_title="피싱템 순위 추적기", layout="wide", page_icon="🎣")
+
+# CSS 주입 (깔끔하고 모던한 UI 만들기)
+st.markdown("""
+<style>
+    /* 전체 배경색 살짝 쿨그레이로 변경 */
+    .stApp {
+        background-color: #F8F9FA;
+    }
+    
+    /* 기본 스트림릿 헤더, 푸터 숨기기 */
+    header {visibility: hidden;}
+    footer {visibility: hidden;}
+    #MainMenu {visibility: hidden;}
+    
+    /* 숫자(Metric) 카드 모던 스타일링 */
+    [data-testid="stMetric"] {
+        background-color: #ffffff;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.04);
+        padding: 15px 20px;
+        border-left: 5px solid #0A84FF; /* 왼쪽 포인트 컬러 */
+    }
+    
+    /* st.container 및 border=True 카드 스타일링 */
+    [data-testid="stVerticalBlock"] > [style*="border"] {
+        background-color: #ffffff !important;
+        border-radius: 15px !important;
+        border: none !important;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.05) !important;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    /* 카드 마우스 호버 효과 */
+    [data-testid="stVerticalBlock"] > [style*="border"]:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 15px rgba(0,0,0,0.1) !important;
+    }
+    
+    /* Form(폼) 컨테이너 모던화 */
+    [data-testid="stForm"] {
+        background-color: #ffffff;
+        border-radius: 15px;
+        border: 1px solid #eef0f5;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.03);
+    }
+    
+    /* 탭 디자인 세련되게 */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 20px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        font-size: 1.1rem;
+        font-weight: 600;
+        padding-bottom: 10px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 
 # =============================================
 # [1] 보안 및 상호명 설정
@@ -35,6 +94,7 @@ try:
 except Exception:
     st.error("보안 설정(Secrets)이 완료되지 않았습니다.")
     st.stop()
+
 
 # =============================================
 # [2] 구글 시트 연결 함수
@@ -604,14 +664,23 @@ if not st.session_state['authenticated']:
 
 
 # =============================================
-# [9] 메인 화면
+# [9] 메인 화면 디자인 & 로고 설정
 # =============================================
-st.title("🎣 피싱템 순위 레이더")
+# 로고 영역 (logo.png 가 있으면 표시, 없으면 이모지 표시)
+col_logo, col_title = st.columns([1, 15])
+with col_logo:
+    if os.path.exists("logo.png"):
+        st.image("logo.png", width=60)
+    else:
+        st.markdown("<div style='font-size:45px; text-align:center;'>🎣</div>", unsafe_allow_html=True)
+with col_title:
+    st.markdown("<h1 style='color: #1E3A8A; margin-top: 10px;'>피싱템 순위 레이더</h1>", unsafe_allow_html=True)
 
 st.link_button(
     "📊 구글 시트에서 전체 기록 보기",
     f"https://docs.google.com/spreadsheets/d/{SHEET_ID}",
 )
+st.markdown("<br>", unsafe_allow_html=True)
 
 tab1, tab2, tab3 = st.tabs(["🔍 순위 수색", "📋 모니터링 관리", "📊 키워드 분석"])
 
@@ -949,7 +1018,6 @@ with tab2:
                         st.caption(change_str)
                         st.caption(f"🕐 {latest_date}")
 
-                        # 💡 키 에러 수정한 부분 (memo[:5] 제거하고 memo 전체 사용)
                         if st.button("🔍 상세분석", key=f"detail_btn_{kw}_{memo}", use_container_width=True):
                             current_detail = st.session_state.get("detail_item")
                             new_detail = f"{kw}|||{memo}"
@@ -960,7 +1028,6 @@ with tab2:
                             st.rerun()
                         
                         unique_item_key = f"{kw}|||{memo}"
-                        # 💡 키 에러 수정한 부분 (memo[:5] 제거하고 memo 전체 사용)
                         is_delete_checked = st.checkbox("🗑️ 삭제 선택", key=f"del_chk_{kw}_{memo}")
                         if is_delete_checked:
                             selected_for_deletion.append(unique_item_key)
