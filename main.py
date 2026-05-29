@@ -1,5 +1,5 @@
 # =============================================
-# 피싱템 순위 레이더 - 전체 코드 (수정본)
+# 피싱템 순위 레이더 - 전체 코드 (최종 수정본)
 # =============================================
 
 import streamlit as st
@@ -36,21 +36,20 @@ except Exception:
     st.stop()
 
 # =============================================
-# [2] 구글 시트 연결 함수
+# [2] 구글 시트 연결 함수 (캐싱 적용 - 속도 향상)
 # =============================================
+@st.cache_resource
 def get_google_sheet():
-    if "google_sheet" not in st.session_state:
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        creds = Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"],
-            scopes=scopes
-        )
-        client = gspread.authorize(creds)
-        st.session_state["google_sheet"] = client.open_by_key(SHEET_ID)
-    return st.session_state["google_sheet"]
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    creds = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=scopes
+    )
+    client = gspread.authorize(creds)
+    return client.open_by_key(SHEET_ID)
 
 
 def get_or_create_worksheet(sh, title, rows=1000, cols=10):
@@ -139,12 +138,14 @@ def load_from_sheet(keyword, sh=None):
         return []
 
 
-def load_all_sheets_at_once(sh, keywords):
+# 데이터 로드 캐싱 적용 (_sh 언더바 적용하여 캐시 충돌 방지)
+@st.cache_data(ttl=300)
+def load_all_sheets_at_once(_sh, keywords):
     """모든 키워드 데이터를 한 번에 로드 (API 호출 최소화)"""
     all_data = {}
     for kw in keywords:
         try:
-            worksheet = sh.worksheet(kw)
+            worksheet = _sh.worksheet(kw)
             all_values = worksheet.get_all_values()
             if not all_values:
                 all_data[kw] = []
@@ -187,7 +188,7 @@ def load_all_sheets_at_once(sh, keywords):
                 if record["날짜"] and str(record["순위"]).strip() and record["상품명"]:
                     records.append(record)
             all_data[kw] = records
-            time.sleep(0.3)
+            time.sleep(0.1) # 속도 개선을 위해 슬립 시간 단축
 
         except gspread.exceptions.WorksheetNotFound:
             all_data[kw] = []
@@ -202,11 +203,13 @@ def load_all_sheets_at_once(sh, keywords):
 # =============================================
 MONITOR_SHEET_NAME = "📋 모니터링 목록"
 
-def load_monitor_keywords(sh=None):
+# 목록 불러오기 캐싱 적용
+@st.cache_data(ttl=300)
+def load_monitor_keywords(_sh=None):
     try:
-        if sh is None:
-            sh = get_google_sheet()
-        worksheet = get_or_create_worksheet(sh, MONITOR_SHEET_NAME, rows=500, cols=3)
+        if _sh is None:
+            _sh = get_google_sheet()
+        worksheet = get_or_create_worksheet(_sh, MONITOR_SHEET_NAME, rows=500, cols=3)
         existing = worksheet.get_all_values()
         if not existing or existing[0] != ["키워드", "등록일", "메모"]:
             worksheet.clear()
@@ -237,18 +240,24 @@ def add_monitor_keyword(keyword, memo=""):
         return False, f"등록 오류: {e}"
 
 
-def delete_monitor_keyword(keyword):
+# 다중 삭제 기능으로 변경
+def delete_multiple_monitor_keywords(keywords_to_delete):
     try:
-        if "google_sheet" in st.session_state:
-            del st.session_state["google_sheet"]
         sh = get_google_sheet()
         worksheet = sh.worksheet(MONITOR_SHEET_NAME)
         records = worksheet.get_all_records()
+        
+        # 삭제할 행 번호 찾기 (헤더가 있으므로 start=2)
+        rows_to_delete = []
         for i, row in enumerate(records, start=2):
-            if row["키워드"] == keyword:
-                worksheet.delete_rows(i)
-                return True
-        return False
+            if row["키워드"] in keywords_to_delete:
+                rows_to_delete.append(i)
+                
+        # 아래 행부터 지워야 인덱스가 밀리지 않음
+        for row_idx in sorted(rows_to_delete, reverse=True):
+            worksheet.delete_rows(row_idx)
+            time.sleep(0.1) # API 오류 방지
+        return True
     except Exception as e:
         st.error(f"삭제 오류: {e}")
         return False
@@ -334,7 +343,8 @@ def get_ad_api_header(method, uri):
         "X-Signature": signature
     }
 
-
+# 광고 API 결과도 캐싱하여 속도 개선
+@st.cache_data(ttl=600)
 def get_keyword_stats(keywords):
     uri = "/keywordstool"
     base_url = "https://api.naver.com"
@@ -388,14 +398,13 @@ def get_keyword_stats(keywords):
 
 
 # =============================================
-# [6] SEO 분석 함수 (수정됨)
+# [6] SEO 분석 함수 
 # =============================================
 def analyze_seo(keyword, product_name, selected_related_kws):
     issues = []
     goods = []
     score = 100
 
-    # 1. 상품명 길이 체크
     name_len = len(product_name)
     if name_len < 15:
         issues.append(("❌ 상품명이 너무 짧아요", f"현재 {name_len}자 → 25~35자 권장"))
@@ -406,7 +415,6 @@ def analyze_seo(keyword, product_name, selected_related_kws):
     else:
         goods.append(f"✅ 상품명 길이 적정 ({name_len}자)")
 
-    # 2. 핵심 키워드 포함 여부
     keyword_clean = keyword.replace(" ", "")
     name_clean = product_name.replace(" ", "")
     if keyword_clean in name_clean:
@@ -415,7 +423,6 @@ def analyze_seo(keyword, product_name, selected_related_kws):
         issues.append(("❌ 핵심 키워드 미포함", f"상품명에 '{keyword}' 키워드를 추가하세요"))
         score -= 30
 
-    # 3. 특수문자 과다 사용 체크
     special_chars = ['!', '@', '#', '$', '%', '^', '&', '*', '~', '+']
     found_special = [c for c in product_name if c in special_chars]
     if len(found_special) > 2:
@@ -424,14 +431,12 @@ def analyze_seo(keyword, product_name, selected_related_kws):
     else:
         goods.append("✅ 특수문자 적정 사용")
 
-    # 4. 브랜드명 위치 체크
     if product_name.startswith(TARGET_STORE):
         issues.append(("⚠️ 브랜드명이 맨 앞에 위치", "핵심 키워드를 앞으로, 브랜드명은 뒤로 이동 권장"))
         score -= 10
     else:
         goods.append("✅ 핵심 키워드 우선 배치")
 
-    # 5. 중복 단어 체크
     words = product_name.split()
     duplicates = [w for w in set(words) if words.count(w) > 1 and len(w) > 1]
     if duplicates:
@@ -440,7 +445,6 @@ def analyze_seo(keyword, product_name, selected_related_kws):
     else:
         goods.append("✅ 중복 단어 없음")
 
-    # 6. 연관 키워드 포함 여부 (사용자가 선택한 키워드 기준)
     included = []
     not_included = []
     for kw in selected_related_kws:
@@ -492,13 +496,12 @@ def generate_recommended_name(keyword, original_name, selected_related_kws):
 
 
 # =============================================
-# [7] 상세 분석 패널 함수 (순위 그래프 삭제 및 SEO 선택 추가)
+# [7] 상세 분석 패널 함수 
 # =============================================
 def render_detail_panel(kw, history, sh):
     st.markdown(f"## 🔍 '{kw}' 상세 분석")
     st.divider()
 
-    # 섹션 1: 경쟁사 분석 (그래프 삭제됨)
     st.markdown("#### 🏆 현재 경쟁사 TOP 10 실시간 분석")
 
     with st.spinner("🛰️ 경쟁사 데이터 수집 중..."):
@@ -547,7 +550,6 @@ def render_detail_panel(kw, history, sh):
 
     st.divider()
 
-    # 섹션 2: SEO 진단
     st.markdown("#### 🔍 SEO 진단 & 상품명 최적화 가이드")
 
     if not found:
@@ -570,7 +572,6 @@ def render_detail_panel(kw, history, sh):
         related_kw_data = get_keyword_stats([kw])
         related_kw_sorted = sorted(related_kw_data, key=lambda x: x["총 검색량"], reverse=True)
     
-    # 사용자가 직접 연관 키워드를 필터링할 수 있도록 수정
     top_candidates = [r["키워드"] for r in related_kw_sorted if r["키워드"] != kw][:10]
     st.markdown("**💡 추천 상품명 연관 키워드 필터링**")
     st.caption("상품과 전혀 관계없는 키워드(예: 낚시복 등)는 X 버튼을 눌러 제외해주세요.")
@@ -811,7 +812,6 @@ with tab1:
             else:
                 st.success(f"✅ 400위 내에서 총 {len(found_items)}개의 자사 상품을 발견했습니다!")
                 
-                # ==== 추가된 부분: 모니터링 관리로 바로 넘기는 폼 ====
                 st.markdown("### 📌 선택 상품 모니터링 바로 등록")
                 st.caption("아래 목록에서 모니터링할 상품을 체크한 뒤 등록 버튼을 누르시면 관리 탭으로 연동됩니다.")
                 
@@ -837,7 +837,6 @@ with tab1:
                                 st.markdown(f"### 🏆 {item['순위']}위")
                                 st.markdown(f"**[{item['상품명']}]({item['링크']})**")
                                 
-                                # 체크박스로 상품 다중 선택
                                 is_checked = st.checkbox(f"모니터링 담기", key=f"chk_{item['순위']}_{item['상품명'][:5]}")
                                 if is_checked:
                                     selected_products.append(item['상품명'])
@@ -857,10 +856,15 @@ with tab1:
                     if not selected_products:
                         st.warning("선택된 상품이 없습니다. 체크박스를 선택해주세요.")
                     else:
-                        memo_text = ", ".join(selected_products)[:40] # 너무 길면 잘리게 처리
+                        memo_text = ", ".join(selected_products)[:40]
                         success, msg = add_monitor_keyword(keyword, memo=f"등록상품: {memo_text}")
                         if success:
                             st.success(f"✅ '{keyword}' 키워드가 모니터링 탭에 성공적으로 추가되었습니다!")
+                            # 데이터가 변경되었으므로 캐시 초기화
+                            load_monitor_keywords.clear()
+                            load_all_sheets_at_once.clear()
+                            time.sleep(1)
+                            st.rerun()
                         else:
                             st.error(f"오류: {msg}")
 
@@ -870,10 +874,8 @@ with tab1:
 # =============================================
 with tab2:
     st.subheader("📋 모니터링 키워드 관리")
-    st.caption("순위 수색 탭에서 추가한 키워드들을 이곳에서 한눈에 관리하세요.")
+    st.caption("등록된 키워드를 모니터링하거나 불필요한 키워드를 체크하여 일괄 삭제할 수 있습니다.")
 
-    # (기존 키워드 수동 등록 섹션은 삭제됨 -> TAB1 으로 통합)
-    # 직접 등록이 꼭 필요할 수도 있으니 삭제보다는 유지하되, 필요 없으시다면 아래 부분을 지우셔도 됩니다.
     st.markdown("#### ➕ 수동 키워드 추가 (옵션)")
     with st.expander("키워드 직접 입력하여 등록하기"):
         col_input, col_memo, col_btn = st.columns([2, 2, 1])
@@ -890,31 +892,35 @@ with tab2:
                         success, msg = add_monitor_keyword(new_keyword.strip(), new_memo.strip())
                     if success:
                         st.success(f"✅ '{new_keyword}' 등록 완료!")
+                        # 데이터가 추가되었으므로 캐시 초기화
+                        load_monitor_keywords.clear()
+                        load_all_sheets_at_once.clear()
+                        time.sleep(1)
                         st.rerun()
                     else:
                         st.error(msg)
 
     st.divider()
 
-    # --- 섹션 2: 등록된 키워드 현황 ---
     st.markdown("#### 📌 등록된 모니터링 키워드 현황")
-    st.caption("카드의 **🔍 상세분석** 버튼을 클릭하면 경쟁사 분석 + SEO 진단을 확인할 수 있습니다.")
+    st.caption("삭제할 키워드의 하단 **[🗑️ 삭제 선택]**을 체크한 후 아래의 **삭제 버튼**을 눌러 일괄 제거하세요.")
 
     with st.spinner("목록 불러오는 중..."):
         sh = get_google_sheet()
-        monitor_keywords = load_monitor_keywords(sh=sh)
+        monitor_keywords = load_monitor_keywords(_sh=sh)
 
     if "detail_keyword" not in st.session_state:
         st.session_state["detail_keyword"] = None
+
+    selected_for_deletion = []
 
     if not monitor_keywords:
         st.info("등록된 키워드가 없습니다. [🔍 순위 수색] 탭에서 키워드를 검색 후 등록해보세요!")
     else:
         st.caption(f"총 {len(monitor_keywords)}개 키워드 등록됨")
 
-        # ✅ 전체 데이터 한 번에 로드
         with st.spinner("📊 순위 데이터 불러오는 중..."):
-            all_history = load_all_sheets_at_once(sh, monitor_keywords)
+            all_history = load_all_sheets_at_once(_sh=sh, keywords=monitor_keywords)
 
         COLS_PER_ROW = 4
         for row_start in range(0, len(monitor_keywords), COLS_PER_ROW):
@@ -992,16 +998,34 @@ with tab2:
                         st.caption(change_str)
                         st.caption(f"🕐 {latest_date}")
 
-                        if st.button(
-                            "🔍 상세분석",
-                            key=f"detail_btn_{kw}",
-                            use_container_width=True
-                        ):
+                        if st.button("🔍 상세분석", key=f"detail_btn_{kw}", use_container_width=True):
                             if st.session_state["detail_keyword"] == kw:
                                 st.session_state["detail_keyword"] = None
                             else:
                                 st.session_state["detail_keyword"] = kw
                             st.rerun()
+                        
+                        # 체크박스로 삭제할 키워드 선택
+                        is_delete_checked = st.checkbox("🗑️ 삭제 선택", key=f"del_chk_{kw}")
+                        if is_delete_checked:
+                            selected_for_deletion.append(kw)
+
+        # 체크박스 다중 삭제 실행 버튼
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("🗑️ 선택한 모니터링 키워드 일괄 삭제", type="secondary"):
+            if not selected_for_deletion:
+                st.warning("삭제할 키워드를 선택해주세요.")
+            else:
+                with st.spinner("삭제 중..."):
+                    if delete_multiple_monitor_keywords(selected_for_deletion):
+                        st.success(f"✅ {len(selected_for_deletion)}개 키워드가 모니터링 목록에서 삭제되었습니다!")
+                        # 캐시 초기화로 화면 즉시 갱신
+                        load_monitor_keywords.clear()
+                        load_all_sheets_at_once.clear()
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("삭제에 실패했습니다.")
 
         # 상세분석 패널
         if st.session_state["detail_keyword"]:
@@ -1015,27 +1039,6 @@ with tab2:
                         st.rerun()
                 selected_history = all_history.get(selected_kw, [])
                 render_detail_panel(selected_kw, selected_history, sh)
-
-        st.divider()
-
-        # --- 섹션 3: 키워드 삭제 ---
-        st.markdown("#### 🗑️ 모니터링 제외 (키워드 삭제)")
-        del_col1, del_col2 = st.columns([3, 1])
-        with del_col1:
-            keyword_to_delete = st.selectbox(
-                "삭제할 키워드 선택",
-                monitor_keywords,
-                label_visibility="collapsed",
-                key="delete_select"
-            )
-        with del_col2:
-            if st.button("🗑️ 삭제", use_container_width=True, type="secondary"):
-                with st.spinner("삭제 중..."):
-                    if delete_monitor_keyword(keyword_to_delete):
-                        st.success(f"✅ '{keyword_to_delete}' 삭제 완료!")
-                        st.rerun()
-                    else:
-                        st.error("삭제에 실패했습니다.")
 
         st.divider()
 
@@ -1077,12 +1080,10 @@ with tab2:
             df_result = pd.DataFrame(results_summary)
             st.dataframe(df_result, use_container_width=True, hide_index=True)
 
-            if "google_sheet" in st.session_state:
-                del st.session_state["google_sheet"]
+            # 수색 완료 후 새로운 데이터 반영을 위해 캐시 비우기
+            load_all_sheets_at_once.clear()
             time.sleep(1)
             st.rerun()
-
-        # (기존 섹션 5 순위변동 그래프는 완전히 삭제되었습니다.)
 
 
 # =============================================
