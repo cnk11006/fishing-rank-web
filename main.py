@@ -673,7 +673,7 @@ if os.path.exists("logo.png"):
     with open("logo.png", "rb") as f:
         encoded_img = base64.b64encode(f.read()).decode()
     # 로고 크기 150px, 오른쪽 여백(글씨와의 간격) 15px
-    img_html = f"<img src='data:image/png;base64,{encoded_img}' style='width: 130px; margin-right: 15px;'>"
+    img_html = f"<img src='data:image/png;base64,{encoded_img}' style='width: 150px; margin-right: 12px;'>"
 else:
     img_html = "<div style='font-size: 70px; margin-right: 15px;'>🎣</div>"
 
@@ -682,7 +682,7 @@ st.markdown(
     f"""
     <div style='display: flex; align-items: center; margin-bottom: 20px;'>
         {img_html}
-        <div style='color: #1E3A8A; font-size: 26px; font-weight: 800; letter-spacing: -1px;'>순위 레이더</div>
+        <div style='color: #1E3A8A; font-size: 26px; font-weight: 800; letter-spacing: -1px;'>순위 검색기</div>
     </div>
     """,
     unsafe_allow_html=True
