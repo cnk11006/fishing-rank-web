@@ -1,5 +1,5 @@
 # =============================================
-# 피싱템 순위 레이더 - 전체 코드 (모던 UI & 로고 추가본)
+# 피싱템 순위 레이더 - 전체 코드 (묶음 상품 탐지 강화 + 모던 UI)
 # =============================================
 
 import streamlit as st
@@ -20,29 +20,23 @@ import os
 # =============================================
 st.set_page_config(page_title="피싱템 순위 검색기", layout="wide", page_icon="🎣")
 
-# CSS 주입 (깔끔하고 모던한 UI 만들기)
 st.markdown("""
 <style>
-    /* 전체 배경색 살짝 쿨그레이로 변경 */
     .stApp {
         background-color: #F8F9FA;
     }
-    
-    /* 기본 스트림릿 헤더, 푸터 숨기기 */
     header {visibility: hidden;}
     footer {visibility: hidden;}
     #MainMenu {visibility: hidden;}
-    
-    /* 숫자(Metric) 카드 모던 스타일링 */
+
     [data-testid="stMetric"] {
         background-color: #ffffff;
         border-radius: 12px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.04);
         padding: 15px 20px;
-        border-left: 5px solid #0A84FF; /* 왼쪽 포인트 컬러 */
+        border-left: 5px solid #0A84FF;
     }
-    
-    /* st.container 및 border=True 카드 스타일링 */
+
     [data-testid="stVerticalBlock"] > [style*="border"] {
         background-color: #ffffff !important;
         border-radius: 15px !important;
@@ -50,22 +44,19 @@ st.markdown("""
         box-shadow: 0 4px 10px rgba(0,0,0,0.05) !important;
         transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
-    
-    /* 카드 마우스 호버 효과 */
+
     [data-testid="stVerticalBlock"] > [style*="border"]:hover {
         transform: translateY(-4px);
         box-shadow: 0 8px 15px rgba(0,0,0,0.1) !important;
     }
-    
-    /* Form(폼) 컨테이너 모던화 */
+
     [data-testid="stForm"] {
         background-color: #ffffff;
         border-radius: 15px;
         border: 1px solid #eef0f5;
         box-shadow: 0 4px 10px rgba(0,0,0,0.03);
     }
-    
-    /* 탭 디자인 세련되게 */
+
     .stTabs [data-baseweb="tab-list"] {
         gap: 20px;
     }
@@ -128,7 +119,8 @@ def save_to_sheet(keyword, found_items):
         all_values = worksheet.get_all_values()
         non_empty_rows = [row for row in all_values if any(cell.strip() for cell in row)]
         if not non_empty_rows:
-            worksheet.append_row(["날짜", "순위", "상품명", "판매처", "가격", "링크", "썸네일"])
+            # ✅ productType 컬럼 추가
+            worksheet.append_row(["날짜", "순위", "상품명", "판매처", "가격", "링크", "썸네일", "productType"])
         rows_to_add = [
             [
                 today,
@@ -137,7 +129,8 @@ def save_to_sheet(keyword, found_items):
                 item["판매처"],
                 item["가격"],
                 item["링크"],
-                item.get("썸네일", "")
+                item.get("썸네일", ""),
+                item.get("productType", "")  # ✅ productType 저장
             ]
             for item in found_items
         ]
@@ -167,7 +160,9 @@ def load_all_sheets_at_once(_sh, keywords):
             else:
                 data_rows = all_values
                 col_count = len(first_row)
-                if col_count >= 7:
+                if col_count >= 8:
+                    header = ["날짜", "순위", "상품명", "판매처", "가격", "링크", "썸네일", "productType"]
+                elif col_count >= 7:
                     header = ["날짜", "순위", "상품명", "판매처", "가격", "링크", "썸네일"]
                 else:
                     header = ["날짜", "순위", "상품명", "판매처", "가격", "링크"]
@@ -185,13 +180,14 @@ def load_all_sheets_at_once(_sh, keywords):
                 if not row or not any(row):
                     continue
                 record = {
-                    "날짜":   get_val(row, "날짜"),
-                    "순위":   get_val(row, "순위"),
-                    "상품명": get_val(row, "상품명"),
-                    "판매처": get_val(row, "판매처"),
-                    "가격":   get_val(row, "가격"),
-                    "링크":   get_val(row, "링크"),
-                    "썸네일": get_val(row, "썸네일"),
+                    "날짜":        get_val(row, "날짜"),
+                    "순위":        get_val(row, "순위"),
+                    "상품명":      get_val(row, "상품명"),
+                    "판매처":      get_val(row, "판매처"),
+                    "가격":        get_val(row, "가격"),
+                    "링크":        get_val(row, "링크"),
+                    "썸네일":      get_val(row, "썸네일"),
+                    "productType": get_val(row, "productType"),  # ✅ 추가
                 }
                 if record["날짜"] and str(record["순위"]).strip() and record["상품명"]:
                     records.append(record)
@@ -206,7 +202,7 @@ def load_all_sheets_at_once(_sh, keywords):
 
 
 # =============================================
-# [3] 모니터링 목록 관리 함수 
+# [3] 모니터링 목록 관리 함수
 # =============================================
 MONITOR_SHEET_NAME = "📋 모니터링 목록"
 
@@ -236,11 +232,9 @@ def add_monitor_keyword(keyword, memo=""):
         if not existing:
             worksheet.append_row(["키워드", "등록일", "메모"])
         records = worksheet.get_all_records()
-        
         for r in records:
             if r["키워드"] == keyword and r.get("메모", "") == memo:
                 return False, "이미 등록된 키워드+상품 조합입니다."
-                
         today = datetime.now().strftime("%Y-%m-%d %H:%M")
         worksheet.append_row([keyword, today, memo])
         return True, "등록 완료"
@@ -253,13 +247,11 @@ def delete_multiple_monitor_keywords(items_to_delete):
         sh = get_google_sheet()
         worksheet = sh.worksheet(MONITOR_SHEET_NAME)
         records = worksheet.get_all_records()
-        
         rows_to_delete = []
         for i, row in enumerate(records, start=2):
             unique_key = f"{row['키워드']}|||{row.get('메모', '')}"
             if unique_key in items_to_delete:
                 rows_to_delete.append(i)
-                
         for row_idx in sorted(rows_to_delete, reverse=True):
             worksheet.delete_rows(row_idx)
             time.sleep(0.1)
@@ -270,8 +262,22 @@ def delete_multiple_monitor_keywords(items_to_delete):
 
 
 # =============================================
-# [4] 네이버 쇼핑 순위 수집 함수
+# [4] 네이버 쇼핑 순위 수집 함수 (묶음 상품 탐지 강화)
 # =============================================
+
+def get_catalog_badge(product_type):
+    """productType 값으로 묶음 여부 배지 문자열 반환"""
+    pt = int(product_type) if str(product_type).strip().isdigit() else 0
+    if pt == 1:
+        return "🔗 가격비교 묶음"
+    elif pt == 2:
+        return "🟡 독립(비매칭)"
+    elif pt == 3:
+        return "✅ 독립(매칭)"
+    else:
+        return ""
+
+
 def collect_rank_data(keyword, client_id, client_secret):
     found_items = []
     price_list = []
@@ -297,29 +303,48 @@ def collect_rank_data(keyword, client_id, client_secret):
             for index, item in enumerate(items):
                 mall_name = item.get('mallName', '')
                 clean_title = item['title'].replace('<b>', '').replace('</b>', '')
+
+                # ✅ productType 추출
+                try:
+                    product_type = int(item.get('productType', 0))
+                except Exception:
+                    product_type = 0
+
+                # ✅ 묶음 여부: productType=1이면 카탈로그 묶음 (mallName이 "네이버"로 바뀜)
+                is_catalog = (product_type == 1)
+
+                # ✅ 피싱템 탐지 강화: mallName OR title 모두 체크
+                #    묶음 상품은 mallName이 "네이버"로 바뀌므로 title 탐지가 핵심
+                is_ours = (TARGET_STORE in mall_name) or (TARGET_STORE in clean_title)
+
                 if page == 0:
                     try:
                         price = int(item.get('lprice', 0))
                         if price > 0:
                             price_list.append(price)
                             top100_items.append({
-                                "순위": start_num + index,
-                                "상품명": clean_title,
-                                "판매처": mall_name,
-                                "링크": item.get('link', ''),
-                                "썸네일": item.get('image', ''),
-                                "가격": price
+                                "순위":        start_num + index,
+                                "상품명":      clean_title,
+                                "판매처":      mall_name,
+                                "링크":        item.get('link', ''),
+                                "썸네일":      item.get('image', ''),
+                                "가격":        price,
+                                "productType": product_type,
+                                "묶음여부":    is_catalog
                             })
                     except Exception:
                         pass
-                if TARGET_STORE in mall_name or TARGET_STORE in item['title']:
+
+                if is_ours:
                     found_items.append({
-                        "순위": start_num + index,
-                        "상품명": clean_title,
-                        "판매처": mall_name,
-                        "링크": item.get('link', ''),
-                        "썸네일": item.get('image', ''),
-                        "가격": int(item.get('lprice', 0))
+                        "순위":        start_num + index,
+                        "상품명":      clean_title,
+                        "판매처":      mall_name,
+                        "링크":        item.get('link', ''),
+                        "썸네일":      item.get('image', ''),
+                        "가격":        int(item.get('lprice', 0)),
+                        "productType": product_type,
+                        "묶음여부":    is_catalog   # ✅ 묶음 여부 저장
                     })
             time.sleep(0.1)
         else:
@@ -387,12 +412,12 @@ def get_keyword_stats(keywords):
                     competition = item.get("compIdx", "")
                     competition_label = competition_map.get(competition, f"{competition}")
                     all_results.append({
-                        "키워드": item.get("relKeyword", ""),
-                        "PC 검색량": monthly_pc,
+                        "키워드":       item.get("relKeyword", ""),
+                        "PC 검색량":    monthly_pc,
                         "모바일 검색량": monthly_mobile,
-                        "총 검색량": monthly_pc + monthly_mobile,
-                        "경쟁강도": competition_label,
-                        "PC 클릭률": item.get("monthlyAvePcClkCnt", 0),
+                        "총 검색량":    monthly_pc + monthly_mobile,
+                        "경쟁강도":     competition_label,
+                        "PC 클릭률":   item.get("monthlyAvePcClkCnt", 0),
                         "모바일 클릭률": item.get("monthlyAveMobileClkCnt", 0),
                     })
             time.sleep(0.2)
@@ -403,7 +428,7 @@ def get_keyword_stats(keywords):
 
 
 # =============================================
-# [6] SEO 분석 함수 
+# [6] SEO 분석 함수
 # =============================================
 def analyze_seo(keyword, product_name, selected_related_kws):
     issues = []
@@ -501,7 +526,7 @@ def generate_recommended_name(keyword, original_name, selected_related_kws):
 
 
 # =============================================
-# [7] 상세 분석 패널 함수 
+# [7] 상세 분석 패널 함수
 # =============================================
 def render_detail_panel(kw, history, sh, target_name=None):
     st.markdown(f"## 🔍 '{kw}' 상세 분석")
@@ -537,6 +562,10 @@ def render_detail_panel(kw, history, sh, target_name=None):
         for item in top10:
             is_ours = TARGET_STORE in item["판매처"] or TARGET_STORE in item["상품명"]
             badge = "🎯 **우리 상품**" if is_ours else ""
+
+            # ✅ 묶음 배지
+            catalog_badge = get_catalog_badge(item.get("productType", 0))
+
             col_img, col_info, col_price = st.columns([1, 5, 2])
             with col_img:
                 if item["썸네일"]:
@@ -545,7 +574,7 @@ def render_detail_panel(kw, history, sh, target_name=None):
                 st.markdown(
                     f"**{item['순위']}위** {badge}  \n"
                     f"[{item['상품명'][:40]}]({item['링크']})  \n"
-                    f"🏪 {item['판매처']}"
+                    f"🏪 {item['판매처']}　{catalog_badge}"
                 )
             with col_price:
                 price_diff = item["가격"] - avg_price if avg_price else 0
@@ -567,20 +596,28 @@ def render_detail_panel(kw, history, sh, target_name=None):
             if target_name == item['상품명'] or target_name in item['상품명']:
                 selected_product = item
                 break
-                
+
     if not selected_product:
         selected_product = found[0]
 
     st.markdown(f"**분석 대상 상품:** `{selected_product['상품명']}`")
     st.markdown(f"**현재 순위:** {selected_product['순위']}위 · **판매가:** {selected_product['가격']:,}원")
 
+    # ✅ 상세분석 패널에서도 묶음 상태 표시
+    pt_badge = get_catalog_badge(selected_product.get("productType", 0))
+    pt_val = selected_product.get("productType", 0)
+    if str(pt_val) == "1":
+        st.warning(f"🔗 **가격비교 묶음 상품으로 노출 중입니다.**\n\n여러 판매처가 하나의 카탈로그로 묶여 `mallName`이 '네이버'로 표기됩니다. 독립 노출을 원하시면 네이버 쇼핑 판매자센터에서 카탈로그 매칭을 해제하거나 상품명/가격을 차별화해 보세요.")
+    elif str(pt_val) in ["2", "3"]:
+        st.success(f"✅ **독립 상품으로 노출 중입니다.** ({pt_badge})")
+
     with st.spinner("📡 연관 키워드 분석 중..."):
         related_kw_data = get_keyword_stats([kw])
         related_kw_sorted = sorted(related_kw_data, key=lambda x: x["총 검색량"], reverse=True)
-    
+
     top_candidates = [r["키워드"] for r in related_kw_sorted if r["키워드"] != kw][:10]
     st.markdown("**💡 추천 상품명 연관 키워드 필터링**")
-    st.caption("상품과 전혀 관계없는 키워드(예: 낚시복 등)는 X 버튼을 눌러 제외해주세요.")
+    st.caption("상품과 전혀 관계없는 키워드는 X 버튼을 눌러 제외해주세요.")
     actual_related_kws = st.multiselect(
         "SEO 최적화에 반영할 핵심 연관 키워드 (최대 3개 권장)",
         options=top_candidates,
@@ -662,17 +699,13 @@ if not st.session_state['authenticated']:
             st.error("비밀번호가 틀렸습니다.")
     st.stop()
 
+
 # =============================================
 # [9] 메인 화면 디자인 & 로고 설정
 # =============================================
-import base64
-import os
-
-# 💡 텍스트를 삭제하고, 로고에 링크(href="?")를 걸어 클릭 시 메인으로 새로고침 되도록 설정
 if os.path.exists("logo.png"):
     with open("logo.png", "rb") as f:
         encoded_img = base64.b64encode(f.read()).decode()
-    
     html_code = f"""
     <div style='margin-bottom: 20px;'>
         <a href="?" target="_self" title="초기 화면으로 돌아가기">
@@ -699,8 +732,9 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 tab1, tab2, tab3 = st.tabs(["🔍 순위 검색", "📋 모니터링 관리", "📊 키워드 분석"])
 
+
 # =============================================
-# TAB 1 - 순위 수색
+# TAB 1 - 순위 검색
 # =============================================
 with tab1:
     keyword = st.text_input("수색할 키워드를 입력하세요 (예: 타이라바 로드)")
@@ -739,29 +773,46 @@ with tab1:
                     for index, item in enumerate(items):
                         mall_name = item.get('mallName', '')
                         clean_title = item['title'].replace('<b>', '').replace('</b>', '')
+
+                        # ✅ productType 추출
+                        try:
+                            product_type = int(item.get('productType', 0))
+                        except Exception:
+                            product_type = 0
+
+                        is_catalog = (product_type == 1)
+
+                        # ✅ 피싱템 탐지 강화
+                        is_ours = (TARGET_STORE in mall_name) or (TARGET_STORE in clean_title)
+
                         if page == 0:
                             try:
                                 price = int(item.get('lprice', 0))
                                 if price > 0:
                                     price_list.append(price)
                                     top100_items.append({
-                                        "순위": start_num + index,
-                                        "상품명": clean_title,
-                                        "판매처": mall_name,
-                                        "링크": item.get('link', ''),
-                                        "썸네일": item.get('image', ''),
-                                        "가격": price
+                                        "순위":        start_num + index,
+                                        "상품명":      clean_title,
+                                        "판매처":      mall_name,
+                                        "링크":        item.get('link', ''),
+                                        "썸네일":      item.get('image', ''),
+                                        "가격":        price,
+                                        "productType": product_type,
+                                        "묶음여부":    is_catalog
                                     })
                             except Exception:
                                 pass
-                        if TARGET_STORE in mall_name or TARGET_STORE in item['title']:
+
+                        if is_ours:
                             found_items.append({
-                                "순위": start_num + index,
-                                "상품명": clean_title,
-                                "판매처": mall_name,
-                                "링크": item.get('link', ''),
-                                "썸네일": item.get('image', ''),
-                                "가격": int(item.get('lprice', 0))
+                                "순위":        start_num + index,
+                                "상품명":      clean_title,
+                                "판매처":      mall_name,
+                                "링크":        item.get('link', ''),
+                                "썸네일":      item.get('image', ''),
+                                "가격":        int(item.get('lprice', 0)),
+                                "productType": product_type,
+                                "묶음여부":    is_catalog
                             })
                     time.sleep(0.1)
                 else:
@@ -777,27 +828,27 @@ with tab1:
 
             st.session_state["search_keyword"] = keyword
             st.session_state["search_results"] = {
-                "found_items": found_items,
-                "price_list": price_list,
+                "found_items":  found_items,
+                "price_list":   price_list,
                 "top100_items": top100_items
             }
 
     if st.session_state["search_results"] is not None:
-        saved_kw = st.session_state["search_keyword"]
+        saved_kw    = st.session_state["search_keyword"]
         found_items = st.session_state["search_results"]["found_items"]
-        price_list = st.session_state["search_results"]["price_list"]
+        price_list  = st.session_state["search_results"]["price_list"]
         top100_items = st.session_state["search_results"]["top100_items"]
 
         avg_price = 0
-        our_avg = 0
+        our_avg   = 0
 
         if price_list:
             min_price = min(price_list)
             max_price = max(price_list)
             avg_price = int(sum(price_list) / len(price_list))
             our_prices = [i["가격"] for i in found_items if i["가격"] > 0]
-            our_avg = int(sum(our_prices) / len(our_prices)) if our_prices else 0
-            diff_pct = int((our_avg - avg_price) / avg_price * 100) if avg_price > 0 else 0
+            our_avg    = int(sum(our_prices) / len(our_prices)) if our_prices else 0
+            diff_pct   = int((our_avg - avg_price) / avg_price * 100) if avg_price > 0 else 0
             diff_label = (
                 f"시장 평균보다 {abs(diff_pct)}% "
                 f"{'💸 비쌈' if diff_pct > 0 else '✅ 저렴'}"
@@ -825,10 +876,10 @@ with tab1:
 
             st.markdown("**📊 가격대별 상품 분포 (1위 ~ 100위)**")
             ranges = {
-                "1만원 이하": len([p for p in price_list if p <= 10000]),
+                "1만원 이하":  len([p for p in price_list if p <= 10000]),
                 "1만 ~ 3만원": len([p for p in price_list if 10000 < p <= 30000]),
                 "3만 ~ 5만원": len([p for p in price_list if 30000 < p <= 50000]),
-                "5만원 이상": len([p for p in price_list if p > 50000]),
+                "5만원 이상":  len([p for p in price_list if p > 50000]),
             }
             rc1, rc2, rc3, rc4 = st.columns(4)
             for col, (label, count) in zip([rc1, rc2, rc3, rc4], ranges.items()):
@@ -840,10 +891,10 @@ with tab1:
             st.error(f"⚠️ 현재 '{TARGET_STORE}' 상품이 400위 내에 비노출 중입니다.")
         else:
             st.success(f"✅ 400위 내에서 총 {len(found_items)}개의 자사 상품을 발견했습니다!")
-            
+
             st.markdown("### 📌 선택 상품 모니터링 바로 등록")
-            st.caption("아래 목록에서 모니터링할 상품을 체크한 뒤 등록 버튼을 누르시면 관리 탭으로 연동됩니다. (여러 개 동시 등록 가능)")
-            
+            st.caption("아래 목록에서 모니터링할 상품을 체크한 뒤 등록 버튼을 누르시면 관리 탭으로 연동됩니다.")
+
             with st.form("add_monitor_form"):
                 checked_items = {}
                 COLS_PER_ROW = 3
@@ -864,13 +915,20 @@ with tab1:
                                         unsafe_allow_html=True
                                     )
                                 st.markdown(f"### 🏆 {item['순위']}위")
+
+                                # ✅ 묶음 여부 배지 표시
+                                if item.get("묶음여부"):
+                                    st.warning("🔗 가격비교 묶음 상품")
+                                else:
+                                    st.success("✅ 독립 노출 상품")
+
                                 st.markdown(f"**[{item['상품명']}]({item['링크']})**")
-                                
+
                                 checked_items[item['상품명']] = st.checkbox(
-                                    f"모니터링 담기", 
+                                    "모니터링 담기",
                                     key=f"chk_{item['순위']}_{item['상품명'][:10]}"
                                 )
-                                
+
                                 st.caption(f"🏪 판매처: {item['판매처']}")
                                 if item["가격"] > 0 and avg_price > 0:
                                     diff = int((item["가격"] - avg_price) / avg_price * 100)
@@ -881,12 +939,15 @@ with tab1:
                                     )
                                     st.caption(f"💴 판매가: {item['가격']:,}원")
                                     st.caption(diff_str)
-                
-                submit_button = st.form_submit_button("🚀 선택한 상품 모니터링 관리로 등록하기", type="primary", use_container_width=True)
-                
+
+                submit_button = st.form_submit_button(
+                    "🚀 선택한 상품 모니터링 관리로 등록하기",
+                    type="primary",
+                    use_container_width=True
+                )
+
                 if submit_button:
                     selected_products = [name for name, is_checked in checked_items.items() if is_checked]
-                    
                     if not selected_products:
                         st.warning("선택된 상품이 없습니다. 체크박스를 선택해주세요.")
                     else:
@@ -896,7 +957,6 @@ with tab1:
                             success, msg = add_monitor_keyword(saved_kw, memo=memo_text)
                             if success:
                                 success_count += 1
-
                         if success_count > 0:
                             st.success(f"✅ 총 {success_count}개의 상품이 모니터링 탭에 성공적으로 추가되었습니다!")
                             load_monitor_keywords.clear()
@@ -938,22 +998,24 @@ with tab2:
             cols = st.columns(COLS_PER_ROW)
             for col, rec in zip(cols, row_recs):
                 with col:
-                    kw = rec["키워드"]
+                    kw   = rec["키워드"]
                     memo = rec["메모"]
                     history = all_history.get(kw, [])
-                    thumbnail = ""
-                    link = ""
-                    best_rank_now = None
-                    change_str = "➖ 첫 수집"
-                    status = "⚪ 순위권 밖 (미노출)"
-                    latest_date = "-"
+
+                    thumbnail    = ""
+                    link         = ""
+                    best_rank_now  = None
+                    change_str   = "➖ 첫 수집"
+                    status       = "⚪ 순위권 밖 (미노출)"
+                    latest_date  = "-"
                     product_name = "-"
+                    latest_product_type = None   # ✅ 묶음 여부용
 
                     if history:
                         try:
                             latest_date = max(set(r["날짜"] for r in history))
                             latest_records = [r for r in history if r["날짜"] == latest_date]
-                            
+
                             target_records = latest_records
                             if memo.startswith("등록상품:"):
                                 target_name = memo.replace("등록상품:", "").strip()
@@ -962,13 +1024,20 @@ with tab2:
                                     target_records = filtered
                                 else:
                                     target_records = []
-                            
+
                             if target_records:
                                 best_record = min(target_records, key=lambda x: int(x["순위"]))
                                 best_rank_now = int(best_record["순위"])
-                                product_name = best_record.get("상품명", "-")
-                                thumbnail = best_record.get("썸네일", "")
-                                link = best_record.get("링크", "")
+                                product_name  = best_record.get("상품명", "-")
+                                thumbnail     = best_record.get("썸네일", "")
+                                link          = best_record.get("링크", "")
+
+                                # ✅ productType 읽기
+                                pt_raw = best_record.get("productType", "")
+                                try:
+                                    latest_product_type = int(pt_raw) if str(pt_raw).strip().isdigit() else None
+                                except Exception:
+                                    latest_product_type = None
 
                                 all_dates = sorted(set(r["날짜"] for r in history))
                                 if len(all_dates) >= 2:
@@ -1020,15 +1089,26 @@ with tab2:
                             st.markdown(f"**[🔑 {kw}]({link})**")
                         else:
                             st.markdown(f"**🔑 {kw}**")
+
                         st.caption(
                             f"📦 {product_name[:20]}..."
                             if len(product_name) > 20
                             else f"📦 {product_name}"
                         )
+
                         if best_rank_now:
                             st.markdown(f"🏆 **{best_rank_now}위** · {status}")
+
+                            # ✅ 묶음 여부 표시
+                            if latest_product_type == 1:
+                                st.caption("🔗 가격비교 묶음 노출 중")
+                            elif latest_product_type in [2, 3]:
+                                st.caption("✅ 독립 상품 노출 중")
+                            else:
+                                st.caption("ℹ️ 노출 형태 미확인 (재수집 필요)")
                         else:
                             st.markdown("🏆 **순위 밖 (미수집)**")
+
                         st.caption(change_str)
                         st.caption(f"🕐 {latest_date}")
 
@@ -1040,7 +1120,7 @@ with tab2:
                             else:
                                 st.session_state["detail_item"] = new_detail
                             st.rerun()
-                        
+
                         unique_item_key = f"{kw}|||{memo}"
                         is_delete_checked = st.checkbox("🗑️ 삭제 선택", key=f"del_chk_{kw}_{memo}")
                         if is_delete_checked:
@@ -1053,7 +1133,7 @@ with tab2:
             else:
                 with st.spinner("삭제 중..."):
                     if delete_multiple_monitor_keywords(selected_for_deletion):
-                        st.success(f"✅ 선택한 상품이 모니터링 목록에서 삭제되었습니다!")
+                        st.success("✅ 선택한 상품이 모니터링 목록에서 삭제되었습니다!")
                         load_monitor_keywords.clear()
                         load_all_sheets_at_once.clear()
                         time.sleep(1)
@@ -1067,9 +1147,13 @@ with tab2:
                 selected_kw, selected_memo = detail_val.split("|||")
             else:
                 selected_kw, selected_memo = detail_val, ""
-                
-            target_product_name = selected_memo.replace("등록상품:", "").strip() if selected_memo.startswith("등록상품:") else None
-            
+
+            target_product_name = (
+                selected_memo.replace("등록상품:", "").strip()
+                if selected_memo.startswith("등록상품:")
+                else None
+            )
+
             st.divider()
             with st.container(border=True):
                 close_col, _ = st.columns([1, 8])
@@ -1078,7 +1162,6 @@ with tab2:
                         st.session_state["detail_item"] = None
                         st.rerun()
                 selected_history = all_history.get(selected_kw, [])
-                
                 render_detail_panel(selected_kw, selected_history, sh, target_product_name)
 
         st.divider()
@@ -1105,9 +1188,14 @@ with tab2:
                 if found:
                     save_to_sheet(kw, found)
                     best = min(found, key=lambda x: x["순위"])["순위"]
+
+                    # ✅ 묶음 상품 수 집계
+                    catalog_count = sum(1 for i in found if i.get("묶음여부"))
+                    catalog_note  = f" (묶음 {catalog_count}개 포함)" if catalog_count > 0 else ""
+
                     results_summary.append({
                         "키워드": kw,
-                        "결과": f"✅ {len(found)}개 발견 (최고 {best}위)",
+                        "결과":   f"✅ {len(found)}개 발견 (최고 {best}위){catalog_note}",
                         "발견 수": len(found)
                     })
                 else:
@@ -1151,9 +1239,11 @@ with tab3:
                 results = get_keyword_stats([analysis_keyword])
 
             if not results:
-                st.error(f"⚠️ '{analysis_keyword}'에 대한 데이터를 네이버에서 찾을 수 없습니다.\n\n"
-                         "- 원인 1: 월간 검색량이 거의 없는 희귀 키워드\n"
-                         "- 원인 2: 네이버 광고 시스템에서 조회가 제한된 단어 (상표권, 금칙어 등)")
+                st.error(
+                    f"⚠️ '{analysis_keyword}'에 대한 데이터를 네이버에서 찾을 수 없습니다.\n\n"
+                    "- 원인 1: 월간 검색량이 거의 없는 희귀 키워드\n"
+                    "- 원인 2: 네이버 광고 시스템에서 조회가 제한된 단어 (상표권, 금칙어 등)"
+                )
             else:
                 main_result = next(
                     (r for r in results if r["키워드"] == analysis_keyword),
@@ -1161,22 +1251,22 @@ with tab3:
                 )
                 st.session_state["analysis_keyword"] = analysis_keyword
                 st.session_state["analysis_results"] = results
-                st.session_state["main_result"] = main_result
+                st.session_state["main_result"]      = main_result
 
     if "main_result" in st.session_state:
-        main_result = st.session_state["main_result"]
-        results = st.session_state["analysis_results"]
+        main_result      = st.session_state["main_result"]
+        results          = st.session_state["analysis_results"]
         analysis_keyword = st.session_state["analysis_keyword"]
 
         st.divider()
         st.markdown(f"##### 📌 '{analysis_keyword}' 키워드 분석 결과")
 
         c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("💻 PC 검색량", f"{main_result['PC 검색량']:,}")
+        c1.metric("💻 PC 검색량",    f"{main_result['PC 검색량']:,}")
         c2.metric("📱 모바일 검색량", f"{main_result['모바일 검색량']:,}")
-        c3.metric("🔢 총 검색량", f"{main_result['총 검색량']:,}")
-        c4.metric("⚔️ 경쟁강도", main_result["경쟁강도"])
-        c5.metric("🖱️ PC 클릭수", f"{main_result['PC 클릭률']:,}")
+        c3.metric("🔢 총 검색량",    f"{main_result['총 검색량']:,}")
+        c4.metric("⚔️ 경쟁강도",     main_result["경쟁강도"])
+        c5.metric("🖱️ PC 클릭수",   f"{main_result['PC 클릭률']:,}")
 
         st.divider()
 
