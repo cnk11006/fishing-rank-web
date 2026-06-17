@@ -878,25 +878,51 @@ with tab4:
             st.error("쇼핑광고 캠페인을 찾지 못했습니다. 광고 API 권한/키를 확인하세요.")
         else:
             # ----- 선택 진단 -----
+            # ----- 선택 진단 (캠페인 다중 선택) -----
             if diag_mode.startswith("⚡"):
                 camp_map = {c.get("name", c.get("nccCampaignId")): c.get("nccCampaignId")
                             for c in shopping_camps}
-                sel_camp_name = st.selectbox("① 캠페인 선택", list(camp_map.keys()))
-                sel_camp_id = camp_map[sel_camp_name]
-                adgroups = ad_get_adgroups(sel_camp_id)
-                if not adgroups:
-                    st.warning("이 캠페인에 광고그룹이 없습니다.")
-                else:
-                    ag_map = {a.get("name", a.get("nccAdgroupId")): a.get("nccAdgroupId")
-                              for a in adgroups}
-                    ag_options = ["📦 이 캠페인 전체 그룹"] + list(ag_map.keys())
-                    sel_ag_name = st.selectbox("② 광고그룹 선택", ag_options)
-                    if st.button("⚡ 선택 진단 시작", type="primary"):
-                        target_groups = adgroups if sel_ag_name.startswith("📦") \
-                            else [a for a in adgroups
-                                  if a.get("nccAdgroupId") == ag_map[sel_ag_name]]
-                        with st.spinner("진단 중..."):
-                            rows = run_ad_diagnosis(target_groups, sel_camp_name, diag_days)
+                sel_camp_names = st.multiselect(
+                    "① 캠페인 선택 (여러 개 선택 가능)",
+                    options=list(camp_map.keys()),
+                    help="선택한 캠페인들의 모든 광고그룹을 진단합니다.")
+
+                # 캠페인을 딱 1개만 골랐을 때는 그룹까지 세부 선택 허용
+                target_groups = []
+                sel_label = ""
+                if len(sel_camp_names) == 1:
+                    only_id = camp_map[sel_camp_names[0]]
+                    adgroups = ad_get_adgroups(only_id)
+                    if adgroups:
+                        ag_map = {a.get("name", a.get("nccAdgroupId")): a.get("nccAdgroupId")
+                                  for a in adgroups}
+                        ag_options = ["📦 이 캠페인 전체 그룹"] + list(ag_map.keys())
+                        sel_ag_name = st.selectbox("② 광고그룹 선택", ag_options)
+                        if sel_ag_name.startswith("📦"):
+                            target_groups = [(sel_camp_names[0], adgroups)]
+                        else:
+                            target_groups = [(sel_camp_names[0],
+                                [a for a in adgroups
+                                 if a.get("nccAdgroupId") == ag_map[sel_ag_name]])]
+                    sel_label = sel_camp_names[0]
+                elif len(sel_camp_names) >= 2:
+                    st.info(f"{len(sel_camp_names)}개 캠페인의 전체 광고그룹을 진단합니다.")
+                    for cn in sel_camp_names:
+                        ags = ad_get_adgroups(camp_map[cn])
+                        target_groups.append((cn, ags))
+                    sel_label = f"{len(sel_camp_names)}개 캠페인"
+
+                if st.button("⚡ 선택 진단 시작", type="primary"):
+                    if not sel_camp_names:
+                        st.warning("캠페인을 1개 이상 선택하세요.")
+                    else:
+                        rows = []
+                        prog = st.progress(0, text="진단 준비 중...")
+                        for ci, (cn, ags) in enumerate(target_groups):
+                            prog.progress(ci/max(len(target_groups),1),
+                                          text=f"🔍 [{ci+1}/{len(target_groups)}] {cn}")
+                            rows += run_ad_diagnosis(ags, cn, diag_days)
+                        prog.progress(1.0, text="✅ 진단 완료!")
                         st.session_state["ad_diag_rows"] = rows
             # ----- 전체 진단 -----
             else:
