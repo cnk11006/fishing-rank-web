@@ -390,6 +390,10 @@ def run_ad_diagnosis(adgroups, campaign_name, days):
     for ag in adgroups:
         agid = ag.get("nccAdgroupId")
         agname = ag.get("name", "")
+
+        # 그룹이 켜져 있는지 판단 (잠김=true 거나 정지=PAUSED 면 OFF)
+        group_on = (ag.get("userLock") != True) and (ag.get("status") != "PAUSED")
+
         ads = ad_get_ads(agid)
         if not ads: continue
         ad_ids = [a.get("nccAdId") for a in ads]
@@ -402,13 +406,25 @@ def run_ad_diagnosis(adgroups, campaign_name, days):
             qi = a.get("nccQi", {}).get("qiGrade", 0)
             bid = a.get("adAttr", {}).get("bidAmt", 0)
             pname = ad_info.get("productName", ref.get("productName", ""))
+
+            # 상품 자체가 켜져 있는지
+            ad_on = (a.get("userLock") != True) and (a.get("status") == "ELIGIBLE")
+            # 그룹과 상품 둘 다 켜져 있어야 진짜 ON
+            is_on = group_on and ad_on
+
             icon, verdict, advice = diagnose_ad(stat, bid_amt=bid, qi_grade=qi)
+
+            # 꺼진 광고는 진단 아이콘 대신 회색 표시
+            if not is_on:
+                icon = "⚪"
+                verdict = "꺼짐 (집행 안 됨)"
+
             rows.append({
                 "상태": icon,
                 "캠페인": campaign_name,
                 "광고그룹": agname,
                 "상품명": pname[:30],
-                "ON/OFF": "ON" if a.get("userLock") == False else "OFF",
+                "ON/OFF": "ON" if is_on else "OFF",
                 "입찰가": bid,
                 "품질지수": qi,
                 "노출수": stat.get("impCnt", 0),
