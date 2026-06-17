@@ -346,13 +346,18 @@ def ad_get_stats(ids, days=7):
             pass
     return result
 
-# ---------- [5-3] 자동 진단 (성과 + 품질지수) ----------
+# ---------- [5-3] 자동 진단 (성과 + 품질지수 + 입찰가 추천) ----------
 def diagnose_ad(stat, bid_amt=None, qi_grade=None):
     imp  = float(stat.get("impCnt", 0) or 0)
     clk  = float(stat.get("clkCnt", 0) or 0)
     ctr  = float(stat.get("ctr", 0) or 0)
     rnk  = float(stat.get("avgRnk", 0) or 0)
     advice = []
+
+    # --- 입찰가 추천 (참고용, 실제 변경은 네이버에서) ---
+    bid_tip = _recommend_bid(imp, ctr, rnk, bid_amt)
+    if bid_tip:
+        advice.append(bid_tip)
 
     if qi_grade is not None and qi_grade > 0:
         if qi_grade <= 3:
@@ -383,6 +388,30 @@ def diagnose_ad(stat, bid_amt=None, qi_grade=None):
         return "🟡", "노출은 되나 클릭 저조", advice
     else:
         return "🟡", "점검 권장", advice
+
+def _recommend_bid(imp, ctr, rnk, bid_amt):
+    """성과 신호에 따라 입찰가 방향만 제안 (정확한 금액 단정 X)"""
+    if not bid_amt or bid_amt <= 0:
+        return None
+    cur = int(bid_amt)
+
+    # 노출 자체가 없음 → 올려서 노출 확보
+    if imp == 0:
+        suggest = int(cur * 1.3)
+        return f"💰 입찰가 추천: 노출이 없어 상향이 필요합니다. {cur:,}원 → 약 {suggest:,}원 검토 (네이버에서 변경)."
+
+    # 노출은 되는데 순위가 낮음 → 소폭 상향
+    if rnk >= 5:
+        suggest = int(cur * 1.2)
+        return f"💰 입찰가 추천: 평균순위가 낮아 상향 여지가 있습니다. {cur:,}원 → 약 {suggest:,}원 검토."
+
+    # 순위 좋고 클릭률도 좋음 → 살짝 낮춰도 유지 가능
+    if rnk > 0 and rnk < 3 and ctr >= 1.0:
+        suggest = int(cur * 0.9)
+        return f"💰 입찰가 추천: 순위·클릭이 우수합니다. {cur:,}원 → 약 {suggest:,}원으로 낮춰도 순위 유지 가능성이 있습니다."
+
+    # 그 외 안정 구간
+    return f"💰 입찰가 추천: 현재 {cur:,}원 수준 유지가 무난합니다."
 
 def run_ad_diagnosis(adgroups, campaign_name, days):
     """광고그룹 리스트 → 소재별 진단 행 리스트 (쇼핑광고 기준)"""
