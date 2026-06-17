@@ -325,7 +325,7 @@ def ad_get_stats(ids, days=7):
     result = {}
     for i in range(0, len(ids), 100):
         chunk = ids[i:i+100]
-        params = {"ids": json.dumps(chunk), "fields": fields, "timeRange": time_range}
+        params = {"ids": chunk, "fields": fields, "timeRange": time_range}
         try:
             res = requests.get(AD_BASE_URL + uri, params=params,
                                headers=get_ad_api_header("GET", uri))
