@@ -611,10 +611,20 @@ with tab1:
                 "found_items":found_items,"price_top10":price_top10,"top100_items":top100_items}
 
     if st.session_state["search_results"] is not None:
-        saved_kw = st.session_state["search_keyword"]
-        found_items = st.session_state["search_results"]["found_items"]
-        price_top10 = st.session_state["search_results"]["price_top10"]
-        top100_items = st.session_state["search_results"]["top100_items"]
+        sr = st.session_state["search_results"]
+        saved_kw = st.session_state.get("search_keyword", "")
+        found_items = sr.get("found_items", [])
+        top100_items = sr.get("top100_items", [])
+        # 새 키(price_top10) 우선, 없으면 옛 구조에서 복구
+        price_top10 = sr.get("price_top10")
+        if price_top10 is None:
+            old_list = sr.get("price_list", [])
+            # 옛 price_list는 1~100위 가격이므로, top100에서 1~10위만 추려 TOP10 가격 재구성
+            if top100_items:
+                price_top10 = [it["가격"] for it in top100_items
+                               if it.get("순위", 999) <= 10 and it.get("가격", 0) > 0]
+            else:
+                price_top10 = old_list[:10] if old_list else []
         avg_price = int(sum(price_top10)/len(price_top10)) if price_top10 else 0
         our_avg = 0
         if price_top10:
