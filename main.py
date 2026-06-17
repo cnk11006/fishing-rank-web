@@ -1042,6 +1042,10 @@ with tab4:
             if not rows:
                 st.warning("진단할 소재가 없습니다.")
             else:
+                # 진단 결과를 시트에 저장 (어제 비교용) + 어제 기록 불러오기
+                save_ad_diagnosis(rows)
+                prev = load_yesterday_ad(rows)
+
                 total_imp = sum(r["노출수"] for r in rows)
                 total_cost = sum(r["광고비"] for r in rows)
                 problem = [r for r in rows if r["상태"] in ["🔴","🟠"]]
@@ -1051,6 +1055,57 @@ with tab4:
                 m3.metric("총 광고비", f"{total_cost:,}원")
                 m4.metric("⚠️ 점검 필요", f"{len(problem)}개")
                 st.divider()
+
+                # ===== 📌 오늘 할 일 TOP 5 =====
+                st.markdown("### 📌 오늘 챙길 광고 TOP 5")
+                # 우선순위 점수: 노출0(🔴)=3, 복합문제(🟠)=2, 단일문제(🟡)=1, 나머지 제외
+                def _priority(r):
+                    if r["상태"] == "🔴": return 3
+                    if r["상태"] == "🟠": return 2
+                    if r["상태"] == "🟡": return 1
+                    return 0
+                todo = [r for r in rows if _priority(r) > 0]
+                todo.sort(key=lambda r: _priority(r), reverse=True)
+                if not todo:
+                    st.success("👍 오늘 급하게 손볼 광고가 없습니다. 모두 양호합니다!")
+                else:
+                    for i, r in enumerate(todo[:5], start=1):
+                        # 핵심 조언 한 줄만 뽑기 (입찰가 추천 우선)
+                        adv_parts = r["_advice"].split(" / ")
+                        key_adv = next((a for a in adv_parts if a.startswith("💰")),
+                                       adv_parts[0] if adv_parts else "")
+                        st.markdown(f"**{i}. {r['상태']} {r['상품명']}** — {r['진단']}")
+                        st.caption(f"　{key_adv}")
+                st.divider()
+
+                # ===== 📉 어제와 비교: 달라진 것만 =====
+                st.markdown("### 📉 어제보다 나빠진 광고")
+                if not prev:
+                    st.info("비교할 어제 기록이 아직 없습니다. 내일 다시 진단하면 변화가 표시됩니다.")
+                else:
+                    changes = []
+                    for r in rows:
+                        p = prev.get(r["상품명"])
+                        if not p:
+                            continue
+                        imp_now = r["노출수"]; imp_old = p["노출수"]
+                        rnk_now = r["평균순위"]; rnk_old = p["평균순위"]
+                        # 노출이 30% 이상 줄었거나, 순위가 3계단 이상 떨어진 경우
+                        if imp_old > 0 and imp_now < imp_old * 0.7:
+                            drop = int((1 - imp_now/imp_old) * 100)
+                            changes.append(f"📉 **{r['상품명']}** · 노출 {drop}% 감소 "
+                                           f"({imp_old:,} → {imp_now:,})")
+                        elif rnk_old > 0 and rnk_now > 0 and rnk_now - rnk_old >= 3:
+                            changes.append(f"📉 **{r['상품명']}** · 순위 하락 "
+                                           f"({rnk_old:.1f}위 → {rnk_now:.1f}위)")
+                    if not changes:
+                        st.success("👍 어제보다 크게 나빠진 광고가 없습니다.")
+                    else:
+                        for c in changes:
+                            st.warning(c)
+                st.divider()
+
+                # ===== 우선 점검 필요한 광고 (기존) =====
                 if problem:
                     st.markdown("#### ⚠️ 우선 점검 필요한 광고")
                     for r in problem:
@@ -1062,6 +1117,8 @@ with tab4:
                                        f"CTR {r['CTR(%)']}% · 평균순위 {r['평균순위']}")
                             st.info(f"💡 {r['_advice']}")
                     st.divider()
+
+                # ===== 전체 광고 성과 표 (기존) =====
                 st.markdown("#### 📋 전체 광고 성과 표")
                 df = pd.DataFrame(rows)[["상태","캠페인","광고그룹","상품명","ON/OFF",
                                          "입찰가","품질지수","노출수","클릭수","CTR(%)",
