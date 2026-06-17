@@ -1138,24 +1138,74 @@ with tab4:
             mon_b = load_monitor_keywords(_sh=sh_b)
             kws_b = list(set(r["키워드"] for r in mon_b)) if mon_b else []
             hist_b = load_all_sheets_at_once(_sh=sh_b, keywords=kws_b) if kws_b else {}
+
         if not kws_b:
             st.info("모니터링 키워드가 없습니다. 먼저 키워드를 등록하고 데이터를 쌓으세요.")
         else:
+            # ---------- 공통: 키워드별 날짜별 최고순위 정리 ----------
+            def _date_best_map(recs):
+                dbest = {}
+                for r in recs:
+                    d = r["날짜"][:10]
+                    try: rk = int(r["순위"])
+                    except Exception: continue
+                    if d not in dbest or rk < dbest[d]:
+                        dbest[d] = rk
+                return dbest
+
+            # ===== 1. 이번 달 챙길 키워드 (시즌 캘린더) =====
+            this_month = datetime.now().strftime("%m")      # 예: "06"
+            last_year = str(datetime.now().year - 1)         # 작년 연도
+            st.markdown(f"### 📅 이번 달({int(this_month)}월) 챙길 키워드")
+            cal_rows = []
+            for kw in kws_b:
+                recs = hist_b.get(kw, [])
+                dbest = _date_best_map(recs)
+                # 작년 이번 달 데이터가 있는지 + 그달에 순위가 좋았는지
+                ly_same_month = {d: v for d, v in dbest.items()
+                                 if d[:4] == last_year and d[5:7] == this_month}
+                if ly_same_month:
+                    best_ly = min(ly_same_month.values())
+                    cal_rows.append(f"🎣 **{kw}** — 작년 {int(this_month)}월 최고 {best_ly}위 "
+                                    f"기록. 지금 광고·재고를 준비하세요!")
+            if cal_rows:
+                for c in cal_rows:
+                    st.success(c)
+            else:
+                st.info("아직 '작년 이번 달' 데이터가 없습니다. 1년 이상 쌓이면 "
+                        "이번 달에 미리 챙길 키워드를 자동으로 알려드립니다.")
+            st.divider()
+
+            # ===== 2. 키워드별 최근 추세 한 줄 요약 =====
+            st.markdown("### 📊 키워드별 최근 추세 요약")
+            for kw in kws_b:
+                recs = hist_b.get(kw, [])
+                dbest = _date_best_map(recs)
+                if len(dbest) < 2:
+                    st.caption(f"• {kw} — 데이터 부족 (수집 더 필요)")
+                    continue
+                sorted_d = sorted(dbest.keys())
+                recent = sorted_d[-1]; before = sorted_d[max(0, len(sorted_d)-4)]  # 약 최근 구간
+                gap = dbest[before] - dbest[recent]   # +면 상승(순위 숫자 감소)
+                if gap >= 3:
+                    st.markdown(f"📈 **{kw}** — 상승 중 ({dbest[before]}위 → {dbest[recent]}위)")
+                elif gap <= -3:
+                    st.markdown(f"📉 **{kw}** — 하락 중 ({dbest[before]}위 → {dbest[recent]}위)")
+                else:
+                    st.markdown(f"➡️ **{kw}** — 정체 (현재 {dbest[recent]}위)")
+            st.divider()
+
+            # ===== 3. 키워드 상세 추세 (기존 그래프 + 작년 비교) =====
+            st.markdown("### 🔍 키워드별 상세 추세")
             sel_kw = st.selectbox("추세를 볼 키워드 선택", kws_b)
             recs = hist_b.get(sel_kw, [])
             if not recs:
                 st.warning("아직 수집된 데이터가 없습니다. 며칠간 수색을 진행해 데이터를 쌓으세요.")
             else:
-                date_best = {}
-                for r in recs:
-                    d = r["날짜"][:10]
-                    try: rk = int(r["순위"])
-                    except Exception: continue
-                    if d not in date_best or rk < date_best[d]:
-                        date_best[d] = rk
-                if date_best:
+                dbest = _date_best_map(recs)
+                if dbest:
                     df_trend = pd.DataFrame(
-                        sorted([{"날짜":d,"최고순위":v} for d,v in date_best.items()],
+                        sorted([{"날짜":d,"최고순위":v} for d,v in dbest.items()],
                                key=lambda x:x["날짜"]))
                     st.markdown(f"#### 📈 '{sel_kw}' 순위 추세 (낮을수록 좋음)")
                     st.line_chart(df_trend.set_index("날짜")["최고순위"])
@@ -1164,9 +1214,33 @@ with tab4:
                         if gap > 0: st.success(f"📈 기록 시작 이후 순위가 {gap}위 상승했습니다.")
                         elif gap < 0: st.warning(f"📉 기록 시작 이후 순위가 {abs(gap)}위 하락했습니다.")
                         else: st.info("➡️ 순위 변동이 거의 없습니다.")
+
+                    # --- 작년 이맘때 비교 ---
+                    st.markdown("##### 🗓️ 작년 같은 달과 비교")
+                    cur_m = datetime.now().strftime("%m")
+                    ly = str(datetime.now().year - 1)
+                    ly_data = {d: v for d, v in dbest.items()
+                               if d[:4] == ly and d[5:7] == cur_m}
+                    ty_data = {d: v for d, v in dbest.items()
+                               if d[:4] == str(datetime.now().year) and d[5:7] == cur_m}
+                    if ly_data and ty_data:
+                        ly_best = min(ly_data.values()); ty_best = min(ty_data.values())
+                        diff = ly_best - ty_best
+                        if diff > 0:
+                            st.success(f"작년 {int(cur_m)}월 최고 {ly_best}위 → 올해 {ty_best}위 "
+                                       f"({diff}위 더 좋음 📈)")
+                        elif diff < 0:
+                            st.warning(f"작년 {int(cur_m)}월 최고 {ly_best}위 → 올해 {ty_best}위 "
+                                       f"({abs(diff)}위 더 나쁨 📉). 광고 강화를 검토하세요.")
+                        else:
+                            st.info(f"작년과 올해 {int(cur_m)}월 순위가 비슷합니다 (최고 {ty_best}위).")
+                    else:
+                        st.info("작년 같은 달 데이터가 없어 비교할 수 없습니다. "
+                                "데이터가 1년 이상 쌓이면 자동으로 비교됩니다.")
+
                     st.dataframe(df_trend, use_container_width=True, hide_index=True)
                 st.divider()
-                st.markdown("#### 📅 시즌 사전 점검 (월별 데이터)")
+                st.markdown("#### 📅 월별 수집 기록")
                 month_count = {}
                 for r in recs:
                     m = r["날짜"][:7]
@@ -1176,7 +1250,3 @@ with tab4:
                         sorted([{"월":m,"수집건수":c} for m,c in month_count.items()],
                                key=lambda x:x["월"]))
                     st.bar_chart(df_month.set_index("월")["수집건수"])
-                    st.caption("월별 노출 기록량입니다. 데이터가 1년 이상 쌓이면 "
-                               "'작년 이맘때 순위가 오른 시점'을 비교해 광고 시작을 앞당기는 데 활용할 수 있습니다.")
-                else:
-                    st.info("월별 비교는 데이터가 더 쌓이면 의미가 커집니다.")
