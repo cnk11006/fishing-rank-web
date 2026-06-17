@@ -437,6 +437,54 @@ def run_ad_diagnosis(adgroups, campaign_name, days):
             })
         time.sleep(0.2)
     return rows
+# ---------- [5-4] 진단 결과 저장 & 어제 비교 ----------
+AD_HISTORY_SHEET = "📢 광고진단 기록"
+
+def save_ad_diagnosis(rows):
+    """진단 결과를 구글 시트에 누적 저장 (어제 비교용)"""
+    try:
+        sh = get_google_sheet()
+        ws = get_or_create_worksheet(sh, AD_HISTORY_SHEET, rows=5000, cols=8)
+        today = datetime.now().strftime("%Y-%m-%d")
+        existing = ws.get_all_values()
+        if not existing:
+            ws.append_row(["날짜","상품명","노출수","클릭수","CTR","평균순위","광고비"])
+        # 오늘 이미 저장했으면 중복 저장 방지 (덮어쓰기 대신 그냥 추가 안 함)
+        already = [r for r in existing[1:] if r and r[0] == today]
+        if already:
+            return  # 오늘 이미 기록됨
+        to_add = [[today, r["상품명"], r["노출수"], r["클릭수"],
+                   r["CTR(%)"], r["평균순위"], r["광고비"]] for r in rows]
+        if to_add:
+            ws.append_rows(to_add, value_input_option="USER_ENTERED")
+    except Exception:
+        pass  # 저장 실패해도 진단은 계속 진행
+
+def load_yesterday_ad(rows):
+    """어제(가장 최근 과거) 기록을 불러와 {상품명: {노출수, 평균순위}} 반환"""
+    try:
+        sh = get_google_sheet()
+        ws = sh.worksheet(AD_HISTORY_SHEET)
+        values = ws.get_all_values()
+        if len(values) < 2:
+            return {}
+        today = datetime.now().strftime("%Y-%m-%d")
+        # 오늘이 아닌 날짜 중 가장 최근 날짜 찾기
+        past_dates = sorted(set(r[0] for r in values[1:] if r and r[0] != today))
+        if not past_dates:
+            return {}
+        last_date = past_dates[-1]
+        prev = {}
+        for r in values[1:]:
+            if r and r[0] == last_date and len(r) >= 6:
+                try:
+                    prev[r[1]] = {"노출수": int(float(r[2] or 0)),
+                                  "평균순위": float(r[5] or 0)}
+                except Exception:
+                    continue
+        return prev
+    except Exception:
+        return {}
 
 # ---------- [6] SEO 분석 ----------
 def analyze_seo(keyword, product_name, selected_related_kws):
