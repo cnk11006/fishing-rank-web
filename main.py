@@ -859,6 +859,62 @@ with tab4:
 
     # ===== A. 광고 전체 진단 대시보드 =====
     with sub_a:
+                # ===== [임시 진단용] API 응답 구조 확인 =====
+        if st.button("🧪 API 응답 구조 진단 (임시)"):
+            st.write("### 1) 캠페인 응답")
+            camps = ad_get_campaigns()
+            st.write(f"캠페인 개수: {len(camps)}")
+            if camps:
+                st.json(camps[0])  # 첫 캠페인 원본 구조
+                first_cid = camps[0].get("nccCampaignId")
+                campaign_tp = camps[0].get("campaignTp")
+                st.write(f"campaignTp(광고유형): {campaign_tp}")
+
+                st.write("### 2) 광고그룹 응답")
+                ags = ad_get_adgroups(first_cid)
+                st.write(f"광고그룹 개수: {len(ags)}")
+                if ags:
+                    st.json(ags[0])
+                    first_agid = ags[0].get("nccAdgroupId")
+
+                    st.write("### 3) 키워드 응답 (/ncc/keywords)")
+                    kws = ad_get_keywords(first_agid)
+                    st.write(f"키워드 개수: {len(kws)}")
+                    if kws:
+                        st.json(kws[0])
+
+                    st.write("### 4) 소재 응답 (/ncc/ads) — 쇼핑광고는 여기 들어있음")
+                    uri_ads = "/ncc/ads"
+                    try:
+                        res_ads = requests.get(
+                            AD_BASE_URL + uri_ads,
+                            params={"nccAdgroupId": first_agid},
+                            headers=get_ad_api_header("GET", uri_ads))
+                        st.write(f"소재 status_code: {res_ads.status_code}")
+                        ads_data = res_ads.json()
+                        st.write(f"소재 개수: {len(ads_data) if isinstance(ads_data, list) else 'N/A'}")
+                        if isinstance(ads_data, list) and ads_data:
+                            st.json(ads_data[0])
+                    except Exception as e:
+                        st.error(f"소재 조회 오류: {e}")
+
+                    st.write("### 5) /stats 원본 응답 (광고그룹 ID로)")
+                    uri_st = "/stats"
+                    until = datetime.now().strftime("%Y-%m-%d")
+                    since = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+                    try:
+                        res_st = requests.get(
+                            AD_BASE_URL + uri_st,
+                            params={
+                                "ids": json.dumps([first_agid]),
+                                "fields": '["impCnt","clkCnt","ctr","cpc","salesAmt","avgRnk"]',
+                                "timeRange": json.dumps({"since": since, "until": until})
+                            },
+                            headers=get_ad_api_header("GET", uri_st))
+                        st.write(f"stats status_code: {res_st.status_code}")
+                        st.json(res_st.json())
+                    except Exception as e:
+                        st.error(f"stats 조회 오류: {e}")
         st.caption("계정의 모든 캠페인→광고그룹→키워드 성과를 불러와 자동 진단합니다.")
         diag_days = st.selectbox("진단 기간", [7, 14, 30], index=0,
                                  format_func=lambda x:f"최근 {x}일")
