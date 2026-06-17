@@ -862,6 +862,38 @@ with tab4:
 
     # ===== A. 쇼핑광고 진단 (선택 / 전체) =====
     with sub_a:
+                # ===== [임시] stats 검증 =====
+        if st.button("🧪 stats 검증 (임시)"):
+            camps = ad_get_campaigns()
+            sh_camps = [c for c in camps if "SHOPPING" in str(c.get("campaignTp",""))
+                        and c.get("userLock") != True]  # 켜진 쇼핑캠페인
+            st.write(f"켜진 쇼핑 캠페인 수: {len(sh_camps)}")
+            found_ad = False
+            for camp in sh_camps:
+                ags = ad_get_adgroups(camp.get("nccCampaignId"))
+                for ag in ags:
+                    ads = ad_get_ads(ag.get("nccAdgroupId"))
+                    on_ads = [a for a in ads if a.get("userLock") == False]
+                    if on_ads:
+                        a = on_ads[0]
+                        aid = a.get("nccAdId")
+                        st.write(f"검증 소재: {a.get('ad',{}).get('productName','')[:30]}")
+                        st.write(f"소재 ID: {aid}")
+                        uri = "/stats"
+                        until = datetime.now().strftime("%Y-%m-%d")
+                        since = (datetime.now()-timedelta(days=30)).strftime("%Y-%m-%d")
+                        r = requests.get(AD_BASE_URL + uri,
+                            params={"ids": json.dumps([aid]),
+                                    "fields": '["impCnt","clkCnt","ctr","salesAmt","avgRnk"]',
+                                    "timeRange": json.dumps({"since":since,"until":until})},
+                            headers=get_ad_api_header("GET", uri))
+                        st.write(f"stats status_code: {r.status_code}")
+                        st.json(r.json())
+                        found_ad = True
+                        break
+                if found_ad: break
+            if not found_ad:
+                st.warning("켜진(ON) 소재를 찾지 못했습니다.")
         st.caption("쇼핑광고 소재 성과를 불러와 자동 진단합니다. 빠른 확인은 '선택 진단', "
                    "정기 점검은 '전체 진단'을 사용하세요.")
         diag_mode = st.radio("진단 방식", ["⚡ 선택 진단 (빠름)", "🩺 전체 진단 (전수·느림)"],
