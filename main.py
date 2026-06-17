@@ -862,7 +862,7 @@ with tab4:
 
     # ===== A. 쇼핑광고 진단 (선택 / 전체) =====
     with sub_a:
-                if st.button("🔍 광고 정보 펼쳐보기 (임시)"):
+        if st.button("🔍 광고 정보 펼쳐보기 (임시)"):
             camps = ad_get_campaigns()
             # 쇼핑광고 캠페인 하나 찾기
             shopping = [c for c in camps if "SHOPPING" in str(c.get("campaignTp", ""))]
