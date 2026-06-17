@@ -859,60 +859,6 @@ with tab4:
 
     # ===== A. 광고 전체 진단 대시보드 =====
     with sub_a:
-        # ===== [임시 진단용 v2] 쇼핑광고 캠페인 구조 확인 =====
-        if st.button("🧪 쇼핑광고 구조 진단 (임시)"):
-            camps = ad_get_campaigns()
-            st.write(f"전체 캠페인 개수: {len(camps)}")
-
-            # 캠페인 유형 분포 확인
-            tp_count = {}
-            for c in camps:
-                tp = c.get("campaignTp", "UNKNOWN")
-                tp_count[tp] = tp_count.get(tp, 0) + 1
-            st.write("**광고유형 분포:**", tp_count)
-
-            # 쇼핑광고 캠페인 찾기 (SHOPPING 포함)
-            shopping_camps = [c for c in camps
-                              if "SHOPPING" in str(c.get("campaignTp", ""))]
-            st.write(f"**쇼핑광고 캠페인 개수: {len(shopping_camps)}**")
-
-            if not shopping_camps:
-                st.warning("쇼핑광고 캠페인을 못 찾았습니다. 전체 캠페인 유형을 확인하세요.")
-                # 켜져있는 캠페인 하나라도 보기
-                on_camps = [c for c in camps if c.get("userLock") != True]
-                target = on_camps[0] if on_camps else camps[0]
-            else:
-                target = shopping_camps[0]
-
-            cid = target.get("nccCampaignId")
-            st.write(f"### 분석 대상 캠페인: {target.get('name')} "
-                     f"({target.get('campaignTp')})")
-
-            ags = ad_get_adgroups(cid)
-            st.write(f"광고그룹 개수: {len(ags)}")
-            if ags:
-                agid = ags[0].get("nccAdgroupId")
-                st.write("**광고그룹 첫 항목:**")
-                st.json(ags[0])
-
-                st.write("### /ncc/keywords 응답")
-                kws = ad_get_keywords(agid)
-                st.write(f"키워드 개수: {len(kws)}")
-                if kws: st.json(kws[0])
-
-                st.write("### /ncc/ads 응답 (쇼핑 소재)")
-                uri_ads = "/ncc/ads"
-                try:
-                    r = requests.get(AD_BASE_URL + uri_ads,
-                                     params={"nccAdgroupId": agid},
-                                     headers=get_ad_api_header("GET", uri_ads))
-                    st.write(f"status: {r.status_code}")
-                    ads = r.json()
-                    st.write(f"소재 개수: {len(ads) if isinstance(ads, list) else 'N/A'}")
-                    if isinstance(ads, list) and ads: st.json(ads[0])
-                except Exception as e:
-                    st.error(f"ads 오류: {e}")
-
                 st.write("### /stats 원본 (광고그룹 ID)")
                 uri_st = "/stats"
                 until = datetime.now().strftime("%Y-%m-%d")
