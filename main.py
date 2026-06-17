@@ -1,5 +1,5 @@
 # =============================================
-# 피싱템 순위 레이더 v2 - 광고진단(A)+시즌데이터(B)+TOP10평균가
+# 피싱템 순위 레이더 v3 - 쇼핑광고 진단(A)+시즌(B)+TOP10평균가
 # [블록 1/4]
 # =============================================
 
@@ -47,7 +47,7 @@ st.markdown("""
 
 # ---------- [1] 보안 & 상호명 ----------
 TARGET_STORE = "피싱템"
-AD_BASE_URL = "https://api.searchad.naver.com"  # 공식 광고 API 베이스
+AD_BASE_URL = "https://api.searchad.naver.com"
 
 try:
     CLIENT_ID = st.secrets["NAVER_CLIENT_ID"]
@@ -183,7 +183,7 @@ def delete_multiple_monitor_keywords(items_to_delete):
         st.error(f"삭제 오류: {e}")
         return False
 
-# ---------- [4] 네이버 쇼핑 순위 수집 (묶음 탐지) ----------
+# ---------- [4] 네이버 쇼핑 순위 수집 (묶음 탐지, TOP10 평균가) ----------
 def get_catalog_badge(product_type):
     pt = int(product_type) if str(product_type).strip().isdigit() else 0
     if pt == 1: return "🔗 가격비교 묶음"
@@ -212,10 +212,8 @@ def collect_rank_data(keyword, client_id, client_secret):
                 is_ours = (TARGET_STORE in mall_name) or (TARGET_STORE in clean_title)
                 try: price = int(item.get('lprice', 0))
                 except Exception: price = 0
-                # ✅ TOP10 평균가용: 1~10위만 수집
                 if rank <= 10 and price > 0:
                     price_list_top10.append(price)
-                # 화면표시용 상위 100개
                 if page == 0 and price > 0:
                     top100_items.append({"순위":rank,"상품명":clean_title,"판매처":mall_name,
                                          "링크":item.get('link',''),"썸네일":item.get('image',''),
@@ -228,8 +226,8 @@ def collect_rank_data(keyword, client_id, client_secret):
         else:
             error_msg = f"API 오류 ({start_num}위 구간)"; break
     return found_items, price_list_top10, top100_items, error_msg
-    # =============================================
-# [블록 2/4] 네이버 광고 API + 진단 로직 + SEO
+# =============================================
+# [블록 2/4] 광고 API + 쇼핑광고 진단 + SEO
 # =============================================
 
 # ---------- [5] 광고 API 공통 헤더 ----------
@@ -246,7 +244,7 @@ def get_ad_api_header(method, uri):
         "X-Signature": signature
     }
 
-# ---------- [5-1] 키워드 검색량(기존) ----------
+# ---------- [5-1] 키워드 검색량 ----------
 @st.cache_data(ttl=600)
 def get_keyword_stats(keywords):
     uri = "/keywordstool"
@@ -282,76 +280,57 @@ def get_keyword_stats(keywords):
             st.warning(f"광고 API 오류: {e}")
     return all_results
 
-# ---------- [5-2] 광고 캠페인/그룹/소재/성과 조회 (A기능 핵심) ----------
+# ---------- [5-2] 캠페인/광고그룹/소재/성과 ----------
 @st.cache_data(ttl=300)
 def ad_get_campaigns():
-    """계정의 모든 캠페인 목록"""
     uri = "/ncc/campaigns"
     try:
         res = requests.get(AD_BASE_URL + uri, headers=get_ad_api_header("GET", uri))
-        if res.status_code == 200:
-            return res.json()
-        return []
+        return res.json() if res.status_code == 200 else []
     except Exception:
         return []
 
 @st.cache_data(ttl=300)
 def ad_get_adgroups(campaign_id):
-    """특정 캠페인의 광고그룹 목록"""
     uri = "/ncc/adgroups"
     try:
         res = requests.get(AD_BASE_URL + uri,
                            params={"nccCampaignId": campaign_id},
                            headers=get_ad_api_header("GET", uri))
-        if res.status_code == 200:
-            return res.json()
-        return []
+        return res.json() if res.status_code == 200 else []
     except Exception:
         return []
 
 @st.cache_data(ttl=300)
-def ad_get_keywords(adgroup_id):
-    """특정 광고그룹의 키워드(소재) 목록 + 입찰가"""
-    uri = "/ncc/keywords"
+def ad_get_ads(adgroup_id):
+    """광고그룹의 소재(쇼핑상품) 목록"""
+    uri = "/ncc/ads"
     try:
         res = requests.get(AD_BASE_URL + uri,
                            params={"nccAdgroupId": adgroup_id},
                            headers=get_ad_api_header("GET", uri))
-        if res.status_code == 200:
-            return res.json()
-        return []
+        return res.json() if res.status_code == 200 else []
     except Exception:
         return []
 
 @st.cache_data(ttl=300)
 def ad_get_stats(ids, days=7):
-    """
-    /stats 엔드포인트로 성과 조회.
-    ids: 캠페인/그룹/키워드 ID 리스트
-    반환: {id: {impCnt, clkCnt, ctr, cpc, salesAmt, avgRnk, ccnt}}
-    """
-    if not ids:
-        return {}
+    """소재 ID 리스트로 성과 조회. return: {id: {지표들}}"""
+    if not ids: return {}
     uri = "/stats"
     until = datetime.now().strftime("%Y-%m-%d")
     since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     fields = '["impCnt","clkCnt","ctr","cpc","salesAmt","avgRnk","ccnt"]'
     time_range = json.dumps({"since": since, "until": until})
     result = {}
-    # ids는 한 번에 너무 많으면 분할 (안전하게 100개씩)
     for i in range(0, len(ids), 100):
         chunk = ids[i:i+100]
-        params = {
-            "ids": json.dumps(chunk),
-            "fields": fields,
-            "timeRange": time_range
-        }
+        params = {"ids": json.dumps(chunk), "fields": fields, "timeRange": time_range}
         try:
             res = requests.get(AD_BASE_URL + uri, params=params,
                                headers=get_ad_api_header("GET", uri))
             if res.status_code == 200:
-                data = res.json().get("data", [])
-                for row in data:
+                for row in res.json().get("data", []):
                     rid = row.get("id")
                     result[rid] = {
                         "impCnt":   row.get("impCnt", 0),
@@ -367,53 +346,81 @@ def ad_get_stats(ids, days=7):
             pass
     return result
 
-# ---------- [5-3] 자동 진단 규칙 (A기능 핵심) ----------
-def diagnose_ad(stat, bid_amt=None, quality=None):
-    """
-    성과 지표로 자동 진단 메시지 생성.
-    stat: ad_get_stats 결과 dict 1건
-    return: (상태아이콘, 핵심진단, [상세조언리스트])
-    """
+# ---------- [5-3] 자동 진단 (성과 + 품질지수) ----------
+def diagnose_ad(stat, bid_amt=None, qi_grade=None):
     imp  = float(stat.get("impCnt", 0) or 0)
     clk  = float(stat.get("clkCnt", 0) or 0)
     ctr  = float(stat.get("ctr", 0) or 0)
     rnk  = float(stat.get("avgRnk", 0) or 0)
-    cost = float(stat.get("salesAmt", 0) or 0)
     advice = []
 
-    # 1) 노출 자체가 없음
+    if qi_grade is not None and qi_grade > 0:
+        if qi_grade <= 3:
+            advice.append(f"품질지수 {qi_grade}/10으로 낮습니다. 썸네일·상품명·리뷰 개선이 시급합니다.")
+        elif qi_grade <= 6:
+            advice.append(f"품질지수 {qi_grade}/10 (보통). 클릭률을 올리면 낮은 입찰가로도 상위 노출이 가능합니다.")
+
     if imp == 0:
-        advice.append("입찰가가 경쟁 대비 낮거나, 키워드 미등록/예산 소진/소재 검수중일 수 있습니다.")
-        advice.append("입찰가 상향, 키워드 등록 여부, 일예산·비즈머니 잔액, 소재 상태를 점검하세요.")
+        advice.append("입찰가가 낮거나 예산 소진/소재 일시중지/검수중일 수 있습니다.")
+        advice.append("입찰가 상향, 일예산·비즈머니 잔액, 소재 ON 여부를 점검하세요.")
         return "🔴", "노출 안 됨", advice
 
-    # 2) 노출은 되는데 순위가 낮음
     if rnk > 0 and rnk >= 5:
-        advice.append(f"평균 노출순위가 {rnk:.1f}위로 낮습니다. 상위 노출(1~3위) 진입이 매출에 유리합니다.")
-        advice.append("입찰가 상향 또는 품질지수(썸네일·상품명) 개선을 검토하세요.")
-
-    # 3) 노출 대비 클릭이 너무 적음 (CTR 낮음)
+        advice.append(f"평균 노출순위 {rnk:.1f}위로 낮습니다. 상위 노출이 매출에 유리합니다.")
+        advice.append("입찰가 상향 또는 품질지수 개선을 검토하세요.")
     if imp >= 100 and ctr < 0.5:
-        advice.append(f"클릭률(CTR)이 {ctr:.2f}%로 낮습니다. 노출은 되나 클릭으로 이어지지 않습니다.")
-        advice.append("썸네일(흰배경·상품 70%↑), 상품명 핵심키워드, 가격경쟁력을 개선하세요.")
-
-    # 4) 클릭은 있는데 데이터 적음 (초기)
+        advice.append(f"클릭률(CTR) {ctr:.2f}%로 낮습니다. 썸네일·상품명·가격을 개선하세요.")
     if 0 < imp < 100:
-        advice.append("노출 데이터가 아직 적습니다. 며칠 더 운영하며 품질지수가 쌓이길 기다리세요.")
+        advice.append("노출 데이터가 아직 적습니다. 며칠 더 운영하며 품질지수를 쌓으세요.")
 
-    # 5) 양호 판정
     if not advice:
-        return "🟢", "양호", ["현재 노출·클릭·순위가 안정적입니다. 현 입찰가를 유지하세요."]
-
-    # 종합 상태 결정
+        return "🟢", "양호", ["노출·클릭·순위가 안정적입니다. 현 입찰가를 유지하세요."]
     if rnk >= 5 and ctr < 0.5:
-        return "🟠", "노출 위치·클릭 모두 개선 필요", advice
+        return "🟠", "노출·클릭 모두 개선 필요", advice
     elif rnk >= 5:
         return "🟡", "노출은 되나 순위 낮음", advice
     elif ctr < 0.5:
         return "🟡", "노출은 되나 클릭 저조", advice
     else:
         return "🟡", "점검 권장", advice
+
+def run_ad_diagnosis(adgroups, campaign_name, days):
+    """광고그룹 리스트 → 소재별 진단 행 리스트 (쇼핑광고 기준)"""
+    rows = []
+    for ag in adgroups:
+        agid = ag.get("nccAdgroupId")
+        agname = ag.get("name", "")
+        ads = ad_get_ads(agid)
+        if not ads: continue
+        ad_ids = [a.get("nccAdId") for a in ads]
+        stats = ad_get_stats(ad_ids, days=days)
+        for a in ads:
+            aid = a.get("nccAdId")
+            stat = stats.get(aid, {})
+            ad_info = a.get("ad", {})
+            ref = a.get("referenceData", {})
+            qi = a.get("nccQi", {}).get("qiGrade", 0)
+            bid = a.get("adAttr", {}).get("bidAmt", 0)
+            pname = ad_info.get("productName", ref.get("productName", ""))
+            icon, verdict, advice = diagnose_ad(stat, bid_amt=bid, qi_grade=qi)
+            rows.append({
+                "상태": icon,
+                "캠페인": campaign_name,
+                "광고그룹": agname,
+                "상품명": pname[:30],
+                "ON/OFF": "ON" if a.get("userLock") == False else "OFF",
+                "입찰가": bid,
+                "품질지수": qi,
+                "노출수": stat.get("impCnt", 0),
+                "클릭수": stat.get("clkCnt", 0),
+                "CTR(%)": round(float(stat.get("ctr", 0) or 0), 2),
+                "평균순위": round(float(stat.get("avgRnk", 0) or 0), 1),
+                "광고비": int(float(stat.get("salesAmt", 0) or 0)),
+                "진단": verdict,
+                "_advice": " / ".join(advice),
+            })
+        time.sleep(0.2)
+    return rows
 
 # ---------- [6] SEO 분석 ----------
 def analyze_seo(keyword, product_name, selected_related_kws):
@@ -471,7 +478,7 @@ def generate_recommended_name(keyword, original_name, selected_related_kws):
 # [블록 3/4] 상세분석 패널 + 로그인 + 메인 + Tab1
 # =============================================
 
-# ---------- [7] 상세 분석 패널 (TOP10 평균가 반영) ----------
+# ---------- [7] 상세 분석 패널 (TOP10 평균가) ----------
 def render_detail_panel(kw, history, sh, target_name=None):
     st.markdown(f"## 🔍 '{kw}' 상세 분석")
     st.divider()
@@ -483,7 +490,6 @@ def render_detail_panel(kw, history, sh, target_name=None):
     else:
         our_prices = [i["가격"] for i in found if i["가격"] > 0]
         our_avg = int(sum(our_prices)/len(our_prices)) if our_prices else 0
-        # ✅ TOP10 평균가
         avg_price = int(sum(price_top10)/len(price_top10)) if price_top10 else 0
         our_best = min(found, key=lambda x:x["순위"])["순위"] if found else None
         c1,c2,c3,c4 = st.columns(4)
@@ -615,16 +621,13 @@ with tab1:
         saved_kw = st.session_state.get("search_keyword", "")
         found_items = sr.get("found_items", [])
         top100_items = sr.get("top100_items", [])
-        # 새 키(price_top10) 우선, 없으면 옛 구조에서 복구
         price_top10 = sr.get("price_top10")
         if price_top10 is None:
-            old_list = sr.get("price_list", [])
-            # 옛 price_list는 1~100위 가격이므로, top100에서 1~10위만 추려 TOP10 가격 재구성
             if top100_items:
                 price_top10 = [it["가격"] for it in top100_items
                                if it.get("순위", 999) <= 10 and it.get("가격", 0) > 0]
             else:
-                price_top10 = old_list[:10] if old_list else []
+                price_top10 = sr.get("price_list", [])[:10]
         avg_price = int(sum(price_top10)/len(price_top10)) if price_top10 else 0
         our_avg = 0
         if price_top10:
@@ -685,7 +688,7 @@ with tab1:
                             time.sleep(1); st.rerun()
                         else: st.warning("이미 등록되었거나 오류 발생.")
 # =============================================
-# [블록 4/4] Tab2 + Tab3 + Tab4(광고진단 A & 시즌 B)
+# [블록 4/4] Tab2 + Tab3 + Tab4(쇼핑광고 진단 A & 시즌 B)
 # =============================================
 
 # ---------- TAB 2 : 모니터링 관리 ----------
@@ -852,131 +855,108 @@ with tab3:
                 file_name=f"{ak}_키워드분석_{datetime.now().strftime('%Y%m%d')}.csv",
                 mime="text/csv", use_container_width=True)
 
-# ---------- TAB 4 : 광고 진단(A) & 시즌 데이터(B) ----------
+# ---------- TAB 4 : 광고 진단(A) & 시즌(B) ----------
 with tab4:
     st.subheader("📢 CPC 광고 진단 & 시즌 전략")
-    sub_a, sub_b = st.tabs(["🩺 광고 전체 진단", "📅 시즌·추세 데이터"])
+    sub_a, sub_b = st.tabs(["🩺 쇼핑광고 진단", "📅 시즌·추세 데이터"])
 
-    # ===== A. 광고 전체 진단 대시보드 =====
+    # ===== A. 쇼핑광고 진단 (선택 / 전체) =====
     with sub_a:
-                st.write("### /stats 원본 (광고그룹 ID)")
-                uri_st = "/stats"
-                until = datetime.now().strftime("%Y-%m-%d")
-                since = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-                try:
-                    r = requests.get(AD_BASE_URL + uri_st,
-                        params={"ids": json.dumps([agid]),
-                                "fields": '["impCnt","clkCnt","ctr","cpc","salesAmt","avgRnk"]',
-                                "timeRange": json.dumps({"since": since, "until": until})},
-                        headers=get_ad_api_header("GET", uri_st))
-                    st.write(f"status: {r.status_code}")
-                    st.json(r.json())
-                except Exception as e:
-                    st.error(f"stats 오류: {e}")
-
-                    st.write("### 5) /stats 원본 응답 (광고그룹 ID로)")
-                    uri_st = "/stats"
-                    until = datetime.now().strftime("%Y-%m-%d")
-                    since = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
-                    try:
-                        res_st = requests.get(
-                            AD_BASE_URL + uri_st,
-                            params={
-                                "ids": json.dumps([first_agid]),
-                                "fields": '["impCnt","clkCnt","ctr","cpc","salesAmt","avgRnk"]',
-                                "timeRange": json.dumps({"since": since, "until": until})
-                            },
-                            headers=get_ad_api_header("GET", uri_st))
-                        st.write(f"stats status_code: {res_st.status_code}")
-                        st.json(res_st.json())
-                    except Exception as e:
-                        st.error(f"stats 조회 오류: {e}")
-        st.caption("계정의 모든 캠페인→광고그룹→키워드 성과를 불러와 자동 진단합니다.")
+        st.caption("쇼핑광고 소재 성과를 불러와 자동 진단합니다. 빠른 확인은 '선택 진단', "
+                   "정기 점검은 '전체 진단'을 사용하세요.")
+        diag_mode = st.radio("진단 방식", ["⚡ 선택 진단 (빠름)", "🩺 전체 진단 (전수·느림)"],
+                             horizontal=True)
         diag_days = st.selectbox("진단 기간", [7, 14, 30], index=0,
-                                 format_func=lambda x:f"최근 {x}일")
-        if st.button("🩺 광고 전체 진단 시작", type="primary"):
-            with st.spinner("📡 캠페인 불러오는 중..."):
-                campaigns = ad_get_campaigns()
-            if not campaigns:
-                st.error("캠페인을 불러오지 못했습니다. 광고 API 권한/키를 확인하세요.")
-            else:
-                rows = []
-                prog = st.progress(0, text="진단 준비 중...")
-                for ci, camp in enumerate(campaigns):
-                    cid = camp.get("nccCampaignId")
-                    cname = camp.get("name", "")
-                    prog.progress(ci/max(len(campaigns),1),
-                                  text=f"🔍 [{ci+1}/{len(campaigns)}] {cname}")
-                    adgroups = ad_get_adgroups(cid)
-                    for ag in adgroups:
-                        agid = ag.get("nccAdgroupId")
-                        agname = ag.get("name","")
-                        keywords = ad_get_keywords(agid)
-                        if not keywords: continue
-                        kw_ids = [k.get("nccKeywordId") for k in keywords]
-                        stats = ad_get_stats(kw_ids, days=diag_days)
-                        for k in keywords:
-                            kid = k.get("nccKeywordId")
-                            stat = stats.get(kid, {})
-                            icon, verdict, advice = diagnose_ad(stat)
-                            rows.append({
-                                "상태": icon,
-                                "캠페인": cname,
-                                "광고그룹": agname,
-                                "키워드": k.get("keyword",""),
-                                "ON/OFF": "ON" if k.get("userLock")==0 else "OFF",
-                                "입찰가": k.get("bidAmt", 0),
-                                "노출수": stat.get("impCnt",0),
-                                "클릭수": stat.get("clkCnt",0),
-                                "CTR(%)": round(float(stat.get("ctr",0) or 0),2),
-                                "평균순위": round(float(stat.get("avgRnk",0) or 0),1),
-                                "광고비": int(float(stat.get("salesAmt",0) or 0)),
-                                "진단": verdict,
-                                "_advice": " / ".join(advice),
-                            })
-                        time.sleep(0.2)
-                prog.progress(1.0, text="✅ 진단 완료!")
-                st.session_state["ad_diag_rows"] = rows
+                                 format_func=lambda x: f"최근 {x}일")
+        with st.spinner("📡 캠페인 목록 불러오는 중..."):
+            campaigns = ad_get_campaigns()
+        # 쇼핑광고 캠페인만 필터
+        shopping_camps = [c for c in campaigns
+                          if "SHOPPING" in str(c.get("campaignTp",""))]
 
+        if not shopping_camps:
+            st.error("쇼핑광고 캠페인을 찾지 못했습니다. 광고 API 권한/키를 확인하세요.")
+        else:
+            # ----- 선택 진단 -----
+            if diag_mode.startswith("⚡"):
+                camp_map = {c.get("name", c.get("nccCampaignId")): c.get("nccCampaignId")
+                            for c in shopping_camps}
+                sel_camp_name = st.selectbox("① 캠페인 선택", list(camp_map.keys()))
+                sel_camp_id = camp_map[sel_camp_name]
+                adgroups = ad_get_adgroups(sel_camp_id)
+                if not adgroups:
+                    st.warning("이 캠페인에 광고그룹이 없습니다.")
+                else:
+                    ag_map = {a.get("name", a.get("nccAdgroupId")): a.get("nccAdgroupId")
+                              for a in adgroups}
+                    ag_options = ["📦 이 캠페인 전체 그룹"] + list(ag_map.keys())
+                    sel_ag_name = st.selectbox("② 광고그룹 선택", ag_options)
+                    if st.button("⚡ 선택 진단 시작", type="primary"):
+                        target_groups = adgroups if sel_ag_name.startswith("📦") \
+                            else [a for a in adgroups
+                                  if a.get("nccAdgroupId") == ag_map[sel_ag_name]]
+                        with st.spinner("진단 중..."):
+                            rows = run_ad_diagnosis(target_groups, sel_camp_name, diag_days)
+                        st.session_state["ad_diag_rows"] = rows
+            # ----- 전체 진단 -----
+            else:
+                skip_off = st.checkbox("꺼진(OFF) 캠페인 제외", value=True)
+                st.info(f"쇼핑광고 캠페인 {len(shopping_camps)}개를 진단합니다. "
+                        "데이터가 많으면 1~2분 소요될 수 있습니다.")
+                if st.button("🩺 전체 진단 시작", type="primary"):
+                    rows = []
+                    target_camps = [c for c in shopping_camps
+                                    if (not skip_off) or c.get("userLock") != True]
+                    prog = st.progress(0, text="진단 준비 중...")
+                    for ci, camp in enumerate(target_camps):
+                        cid = camp.get("nccCampaignId"); cname = camp.get("name","")
+                        prog.progress(ci/max(len(target_camps),1),
+                                      text=f"🔍 [{ci+1}/{len(target_camps)}] {cname}")
+                        adgroups = ad_get_adgroups(cid)
+                        rows += run_ad_diagnosis(adgroups, cname, diag_days)
+                    prog.progress(1.0, text="✅ 진단 완료!")
+                    st.session_state["ad_diag_rows"] = rows
+
+        # ----- 결과 표시 (공통) -----
         if st.session_state.get("ad_diag_rows"):
             rows = st.session_state["ad_diag_rows"]
-            # 요약 지표
-            total_imp = sum(r["노출수"] for r in rows)
-            total_clk = sum(r["클릭수"] for r in rows)
-            total_cost = sum(r["광고비"] for r in rows)
-            problem = [r for r in rows if r["상태"] in ["🔴","🟠"]]
-            m1,m2,m3,m4 = st.columns(4)
-            m1.metric("진단 키워드 수", f"{len(rows)}개")
-            m2.metric("총 노출수", f"{total_imp:,}")
-            m3.metric("총 광고비", f"{total_cost:,}원")
-            m4.metric("⚠️ 점검 필요", f"{len(problem)}개")
-            st.divider()
-            # 점검 필요 항목 먼저
-            if problem:
-                st.markdown("#### ⚠️ 우선 점검 필요한 광고")
-                for r in problem:
-                    with st.container(border=True):
-                        st.markdown(f"{r['상태']} **{r['키워드']}** · {r['진단']}")
-                        st.caption(f"캠페인: {r['캠페인']} / 그룹: {r['광고그룹']} · "
-                                   f"입찰가 {r['입찰가']:,}원 · 노출 {r['노출수']:,} · "
-                                   f"클릭 {r['클릭수']} · CTR {r['CTR(%)']}% · 평균순위 {r['평균순위']}")
-                        st.info(f"💡 {r['_advice']}")
+            if not rows:
+                st.warning("진단할 소재가 없습니다.")
+            else:
+                total_imp = sum(r["노출수"] for r in rows)
+                total_cost = sum(r["광고비"] for r in rows)
+                problem = [r for r in rows if r["상태"] in ["🔴","🟠"]]
+                m1,m2,m3,m4 = st.columns(4)
+                m1.metric("진단 소재 수", f"{len(rows)}개")
+                m2.metric("총 노출수", f"{total_imp:,}")
+                m3.metric("총 광고비", f"{total_cost:,}원")
+                m4.metric("⚠️ 점검 필요", f"{len(problem)}개")
                 st.divider()
-            # 전체 표
-            st.markdown("#### 📋 전체 광고 성과 표")
-            df = pd.DataFrame(rows)[["상태","캠페인","광고그룹","키워드","ON/OFF",
-                                     "입찰가","노출수","클릭수","CTR(%)","평균순위","광고비","진단"]]
-            st.dataframe(df, use_container_width=True, hide_index=True)
-            csv = df.to_csv(index=False).encode("utf-8-sig")
-            st.download_button("📥 진단 결과 CSV 다운로드", csv,
-                file_name=f"광고진단_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv")
-            st.caption("※ 품질지수는 API로 제공되지 않아 표에 없습니다. "
-                       "광고관리시스템 화면에서 품질지수 막대를 함께 참고하세요.")
+                if problem:
+                    st.markdown("#### ⚠️ 우선 점검 필요한 광고")
+                    for r in problem:
+                        with st.container(border=True):
+                            st.markdown(f"{r['상태']} **{r['상품명']}** · {r['진단']}")
+                            st.caption(f"캠페인: {r['캠페인']} / 그룹: {r['광고그룹']} · "
+                                       f"입찰가 {r['입찰가']:,}원 · 품질 {r['품질지수']}/10 · "
+                                       f"노출 {r['노출수']:,} · 클릭 {r['클릭수']} · "
+                                       f"CTR {r['CTR(%)']}% · 평균순위 {r['평균순위']}")
+                            st.info(f"💡 {r['_advice']}")
+                    st.divider()
+                st.markdown("#### 📋 전체 광고 성과 표")
+                df = pd.DataFrame(rows)[["상태","캠페인","광고그룹","상품명","ON/OFF",
+                                         "입찰가","품질지수","노출수","클릭수","CTR(%)",
+                                         "평균순위","광고비","진단"]]
+                st.dataframe(df, use_container_width=True, hide_index=True)
+                csv = df.to_csv(index=False).encode("utf-8-sig")
+                st.download_button("📥 진단 결과 CSV 다운로드", csv,
+                    file_name=f"광고진단_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv")
+                st.caption("※ 품질지수는 쇼핑광고 소재 기준(1~10)입니다.")
 
     # ===== B. 시즌·추세 데이터 =====
     with sub_b:
-        st.caption("누적된 순위 기록을 활용해 시즌 진입 시점과 추세를 파악합니다.")
+        st.caption("누적된 순위 기록으로 시즌 진입 시점과 추세를 파악합니다.")
         with st.spinner("📊 데이터 불러오는 중..."):
             sh_b = get_google_sheet()
             mon_b = load_monitor_keywords(_sh=sh_b)
@@ -990,7 +970,6 @@ with tab4:
             if not recs:
                 st.warning("아직 수집된 데이터가 없습니다. 며칠간 수색을 진행해 데이터를 쌓으세요.")
             else:
-                # 날짜별 최고순위 시계열
                 date_best = {}
                 for r in recs:
                     d = r["날짜"][:10]
@@ -1003,35 +982,25 @@ with tab4:
                         sorted([{"날짜":d,"최고순위":v} for d,v in date_best.items()],
                                key=lambda x:x["날짜"]))
                     st.markdown(f"#### 📈 '{sel_kw}' 순위 추세 (낮을수록 좋음)")
-                    chart_df = df_trend.set_index("날짜")["최고순위"]
-                    st.line_chart(chart_df)
-                    # 최근 변화 요약
+                    st.line_chart(df_trend.set_index("날짜")["최고순위"])
                     if len(df_trend) >= 2:
-                        first_rk = df_trend.iloc[0]["최고순위"]
-                        last_rk = df_trend.iloc[-1]["최고순위"]
-                        gap = first_rk - last_rk
-                        if gap > 0:
-                            st.success(f"📈 기록 시작 이후 순위가 {gap}위 상승했습니다.")
-                        elif gap < 0:
-                            st.warning(f"📉 기록 시작 이후 순위가 {abs(gap)}위 하락했습니다.")
-                        else:
-                            st.info("➡️ 순위 변동이 거의 없습니다.")
+                        gap = df_trend.iloc[0]["최고순위"] - df_trend.iloc[-1]["최고순위"]
+                        if gap > 0: st.success(f"📈 기록 시작 이후 순위가 {gap}위 상승했습니다.")
+                        elif gap < 0: st.warning(f"📉 기록 시작 이후 순위가 {abs(gap)}위 하락했습니다.")
+                        else: st.info("➡️ 순위 변동이 거의 없습니다.")
                     st.dataframe(df_trend, use_container_width=True, hide_index=True)
-
                 st.divider()
-                # 시즌 사전 알림 (작년 동월 데이터 기반)
                 st.markdown("#### 📅 시즌 사전 점검 (월별 데이터)")
                 month_count = {}
                 for r in recs:
-                    m = r["날짜"][:7]  # YYYY-MM
+                    m = r["날짜"][:7]
                     month_count[m] = month_count.get(m, 0) + 1
-                if len(month_count) >= 1:
+                if month_count:
                     df_month = pd.DataFrame(
                         sorted([{"월":m,"수집건수":c} for m,c in month_count.items()],
                                key=lambda x:x["월"]))
                     st.bar_chart(df_month.set_index("월")["수집건수"])
                     st.caption("월별 노출 기록량입니다. 데이터가 1년 이상 쌓이면 "
-                               "'작년 이맘때 순위가 오르기 시작한 시점'을 비교해 "
-                               "올해 광고 시작 시점을 앞당기는 판단에 쓸 수 있습니다.")
+                               "'작년 이맘때 순위가 오른 시점'을 비교해 광고 시작을 앞당기는 데 활용할 수 있습니다.")
                 else:
                     st.info("월별 비교는 데이터가 더 쌓이면 의미가 커집니다.")
