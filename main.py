@@ -862,26 +862,6 @@ with tab4:
 
     # ===== A. 쇼핑광고 진단 (선택 / 전체) =====
     with sub_a:
-        if st.button("🔍 광고 정보 펼쳐보기 (임시)"):
-            camps = ad_get_campaigns()
-            # 쇼핑광고 캠페인 하나 찾기
-            shopping = [c for c in camps if "SHOPPING" in str(c.get("campaignTp", ""))]
-            target = shopping[0] if shopping else camps[0]
-            cid = target.get("nccCampaignId")
-
-            ags = ad_get_adgroups(cid)
-            if ags:
-                agid = ags[0].get("nccAdgroupId")
-                st.write("### ① 광고그룹 정보 (여기서 status, userLock 확인)")
-                st.json(ags[0])
-
-                ads = ad_get_ads(agid)
-                if ads:
-                    st.write("### ② 광고 상품(소재) 정보 (여기서 status, userLock 확인)")
-                    st.json(ads[0])
-                else:
-                    st.warning("이 광고그룹에 상품이 없습니다.")
-
         st.caption("쇼핑광고 소재 성과를 불러와 자동 진단합니다. 빠른 확인은 '선택 진단', "
                    "정기 점검은 '전체 진단'을 사용하세요.")
         diag_mode = st.radio("진단 방식", ["⚡ 선택 진단 (빠름)", "🩺 전체 진단 (전수·느림)"],
