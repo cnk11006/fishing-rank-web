@@ -567,6 +567,52 @@ def generate_recommended_name(keyword, original_name, selected_related_kws):
     if len(base) + len(TARGET_STORE) + 1 <= 40:
         return f"{base} {TARGET_STORE}".strip()
     return base.strip()
+    # ---------- [10] 유입·상품 분석 (엑셀 업로드) ----------
+def analyze_channel_file(uploaded_file):
+    """유입경로 엑셀 → 정리된 DataFrame 반환"""
+    df = pd.read_excel(uploaded_file)
+    # 숫자 컬럼 정리 (없을 수도 있으니 안전하게)
+    def num(col):
+        return pd.to_numeric(df[col], errors="coerce").fillna(0) if col in df.columns else 0
+    out = pd.DataFrame({
+        "채널속성": df.get("채널속성", ""),
+        "채널그룹": df.get("채널그룹", ""),
+        "채널명": df.get("채널명", ""),
+        "유입수": num("유입수"),
+        "결제수": num("결제수(마지막클릭)"),
+        "결제금액": num("결제금액(마지막클릭)"),
+    })
+    # 유입 대비 결제율(%)
+    out["결제율(%)"] = (out["결제수"] / out["유입수"].replace(0, pd.NA) * 100).fillna(0).round(2)
+    return out
+
+def analyze_product_file(uploaded_file):
+    """상품별 엑셀 → 정리된 DataFrame + 4분류"""
+    df = pd.read_excel(uploaded_file)
+    def num(col):
+        return pd.to_numeric(df[col], errors="coerce").fillna(0) if col in df.columns else 0
+    out = pd.DataFrame({
+        "상품명": df.get("상품명", ""),
+        "상품ID": df.get("상품ID", ""),
+        "조회수": num("상품상세조회수"),
+        "결제금액": num("결제금액"),
+        "결제수량": num("결제상품수량"),
+        "결제율": num("상세조회대비결제율"),
+    })
+    # 4분류 기준: 조회수 중앙값, 결제율 중앙값
+    view_mid = out["조회수"][out["조회수"] > 0].median() if (out["조회수"] > 0).any() else 0
+    rate_mid = out["결제율"][out["결제율"] > 0].median() if (out["결제율"] > 0).any() else 0
+
+    def classify(row):
+        high_view = row["조회수"] >= view_mid
+        high_rate = row["결제율"] >= rate_mid
+        if high_view and high_rate:   return "🟢 효자상품"
+        if high_view and not high_rate: return "🔴 개선필요"
+        if not high_view and high_rate: return "🟡 숨은보석"
+        return "⚪ 정리검토"
+    out["분류"] = out.apply(classify, axis=1)
+    return out
+
 # =============================================
 # [블록 3/4] 상세분석 패널 + 로그인 + 메인 + Tab1
 # =============================================
