@@ -1333,8 +1333,19 @@ with tab5:
     st.subheader("📂 유입·상품 분석")
     st.caption("스마트스토어에서 받은 엑셀(.xlsx)을 올리면 자동으로 분석합니다. "
                "두 파일은 따로 올려도 됩니다.")
+    with st.expander("📥 각 파일은 어디서 받나요? (다운로드 경로)"):
+        st.markdown("""
+**1. 유입경로 파일 (전체채널)**
+스마트스토어센터 → 데이터분석 → 마케팅분석(전체채널) → 조회기간 설정(월별) → 파일 다운로드
 
-    col_up1, col_up2 = st.columns(2)
+**2. 상품별 파일**
+스마트스토어센터 → 데이터분석 → 쇼핑행동분석(상품별) → 조회기간 설정(월별) → 파일 다운로드
+
+**3. 검색채널 파일 (키워드)**
+스마트스토어센터 → 데이터분석 → 마케팅분석 → 검색채널 → 조회기간 설정(월별) → 파일 다운로드
+        """)
+
+    col_up1, col_up2, col_up3 = st.columns(3)
     with col_up1:
         st.markdown("##### 🚪 유입경로 파일")
         channel_file = st.file_uploader("전체채널 엑셀 올리기", type=["xlsx"],
@@ -1343,6 +1354,10 @@ with tab5:
         st.markdown("##### 📦 상품별 파일")
         product_file = st.file_uploader("상품별 엑셀 올리기", type=["xlsx"],
                                         key="product_uploader")
+    with col_up3:
+        st.markdown("##### 🔎 검색채널 파일")
+        search_file = st.file_uploader("검색채널 엑셀 올리기", type=["xlsx"],
+                                       key="search_uploader")
 
     st.divider()
 
@@ -1443,6 +1458,53 @@ with tab5:
                 mime="text/csv")
         except Exception as e:
             st.error(f"상품별 파일을 읽는 중 오류: {e}")
+    # ===== 검색채널(키워드) 분석 =====
+    if search_file is not None:
+        st.markdown("## 🔎 검색채널(키워드) 분석")
+        try:
+            sr, raw_cols = analyze_search_file(search_file)
+            if sr.empty:
+                st.warning("검색어 데이터를 찾지 못했습니다. "
+                           f"이 파일의 열 이름: {raw_cols}")
+            else:
+                tv = int(sr["유입수"].sum()); tp = int(sr["결제금액"].sum())
+                c1, c2 = st.columns(2)
+                c1.metric("총 유입수", f"{tv:,}")
+                c2.metric("총 결제금액", f"{tp:,}원")
 
-    if channel_file is None and product_file is None:
+                st.markdown("#### 🔝 유입 많은 키워드 TOP 15")
+                top_v = sr.sort_values("유입수", ascending=False).head(15)
+                st.dataframe(top_v[["검색어","유입수","결제수","결제금액","결제율(%)"]],
+                             use_container_width=True, hide_index=True)
+
+                st.markdown("#### 💰 매출 많은 키워드 TOP 15")
+                top_p = sr.sort_values("결제금액", ascending=False).head(15)
+                st.dataframe(top_p[["검색어","유입수","결제수","결제금액","결제율(%)"]],
+                             use_container_width=True, hide_index=True)
+
+                st.markdown("#### 💎 결제율 높은 알짜 키워드 (유입 30 이상)")
+                st.caption("유입은 많지 않아도 들어오면 잘 사는 키워드입니다. 광고·SEO에 활용하세요.")
+                gems = sr[sr["유입수"] >= 30].sort_values("결제율(%)", ascending=False).head(10)
+                st.dataframe(gems[["검색어","유입수","결제수","결제율(%)"]],
+                             use_container_width=True, hide_index=True)
+
+                st.markdown("#### 🎯 우리 브랜드(피싱템) 검색 키워드")
+                ours_kw = sr[sr["검색어"].str.contains(TARGET_STORE, na=False)]
+                if ours_kw.empty:
+                    st.info("'피싱템'이 포함된 검색어가 없습니다.")
+                else:
+                    st.dataframe(
+                        ours_kw[["검색어","유입수","결제수","결제금액","결제율(%)"]]
+                            .sort_values("유입수", ascending=False),
+                        use_container_width=True, hide_index=True)
+
+                csv = sr.to_csv(index=False).encode("utf-8-sig")
+                st.download_button("📥 검색키워드 분석 CSV 다운로드", csv,
+                    file_name=f"검색키워드분석_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv")
+        except Exception as e:
+            st.error(f"검색채널 파일을 읽는 중 오류: {e}")
+        st.divider()
+
+       if channel_file is None and product_file is None and search_file is None:
         st.info("위에서 엑셀 파일을 올리면 분석이 시작됩니다.")
