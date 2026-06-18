@@ -1458,16 +1458,17 @@ with tab5:
                 mime="text/csv")
         except Exception as e:
             st.error(f"상품별 파일을 읽는 중 오류: {e}")
+            
     # ===== 검색채널(키워드) 분석 =====
     if search_file is not None:
         st.markdown("## 🔎 검색채널(키워드) 분석")
         try:
             sr, raw_cols = analyze_search_file(search_file)
             if sr.empty:
-                st.warning("검색어 데이터를 찾지 못했습니다. "
-                           f"이 파일의 열 이름: {raw_cols}")
+                st.warning(f"검색어 데이터를 찾지 못했습니다. 열 이름: {raw_cols}")
             else:
-                tv = int(sr["유입수"].sum()); tp = int(sr["결제금액"].sum())
+                tv = int(sr["유입수"].sum())
+                tp = int(sr["결제금액"].sum())
                 c1, c2 = st.columns(2)
                 c1.metric("총 유입수", f"{tv:,}")
                 c2.metric("총 결제금액", f"{tp:,}원")
@@ -1483,7 +1484,6 @@ with tab5:
                              use_container_width=True, hide_index=True)
 
                 st.markdown("#### 💎 결제율 높은 알짜 키워드 (유입 30 이상)")
-                st.caption("유입은 많지 않아도 들어오면 잘 사는 키워드입니다. 광고·SEO에 활용하세요.")
                 gems = sr[sr["유입수"] >= 30].sort_values("결제율(%)", ascending=False).head(10)
                 st.dataframe(gems[["검색어","유입수","결제수","결제율(%)"]],
                              use_container_width=True, hide_index=True)
@@ -1506,5 +1506,6 @@ with tab5:
             st.error(f"검색채널 파일을 읽는 중 오류: {e}")
         st.divider()
 
-       if channel_file is None and product_file is None and search_file is None:
+    if channel_file is None and product_file is None and search_file is None:
         st.info("위에서 엑셀 파일을 올리면 분석이 시작됩니다.")
+            
