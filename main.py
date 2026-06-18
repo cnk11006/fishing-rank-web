@@ -434,7 +434,7 @@ def run_ad_diagnosis(adgroups, campaign_name, days):
             ref = a.get("referenceData", {})
             qi = a.get("nccQi", {}).get("qiGrade", 0)
             bid = a.get("adAttr", {}).get("bidAmt", 0)
-            pname = ad_info.get("productName", ref.get("productName", ""))
+            pname = ad_info.get("productName") or ref.get("productName") or "(이름 없음)"
 
             # 상품 자체가 켜져 있는지
             ad_on = (a.get("userLock") != True) and (a.get("status") == "ELIGIBLE")
