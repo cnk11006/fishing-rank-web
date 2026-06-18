@@ -612,7 +612,38 @@ def analyze_product_file(uploaded_file):
         return "⚪ 정리검토"
     out["분류"] = out.apply(classify, axis=1)
     return out
+def analyze_search_file(uploaded_file):
+    """검색채널(키워드) 엑셀 → 정리된 DataFrame. 같은 키워드 합산."""
+    df = pd.read_excel(uploaded_file)
+    cols = list(df.columns)
 
+    def find_col(keywords):
+        for c in cols:
+            for kw in keywords:
+                if kw in str(c):
+                    return c
+        return None
+
+    kw_col    = find_col(["키워드", "검색어"])
+    visit_col = find_col(["유입수"])
+    pay_cnt   = find_col(["결제수"])
+    pay_amt   = find_col(["결제금액"])
+
+    def num(col):
+        return pd.to_numeric(df[col], errors="coerce").fillna(0) if col else 0
+
+    out = pd.DataFrame({
+        "검색어": df[kw_col].astype(str) if kw_col else "",
+        "유입수": num(visit_col),
+        "결제수": num(pay_cnt),
+        "결제금액": num(pay_amt),
+    })
+    out = out[~out["검색어"].isin(["(검색어 없음)", "nan", ""])]
+    out = out.groupby("검색어", as_index=False).agg(
+        {"유입수": "sum", "결제수": "sum", "결제금액": "sum"})
+    out["결제율(%)"] = (out["검색어"].map(lambda x: 0))  # 임시
+    out["결제율(%)"] = (out["결제수"] / out["유입수"].replace(0, pd.NA) * 100).fillna(0).round(2)
+    return out, cols
 # =============================================
 # [블록 3/4] 상세분석 패널 + 로그인 + 메인 + Tab1
 # =============================================
