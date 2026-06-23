@@ -817,6 +817,35 @@ with tab1:
             c3.metric("TOP10 최고가", f"{max(price_top10):,}원")
             c4.metric("피싱템 평균가", f"{our_avg:,}원" if our_avg else "-")
             st.divider()
+                    # ===== 경쟁사 시장 분석 TOP 10 (썸네일 + 가격 + 클릭 이동) =====
+        if top100_items:
+            st.markdown("### 🏪 시장 경쟁 상품 TOP 10")
+            st.caption("현재 이 키워드의 상위 노출 상품들입니다. 썸네일/상품명을 클릭하면 해당 상품 페이지로 이동합니다.")
+
+            top10 = top100_items[:10]
+            cols = st.columns(5)   # 한 줄에 5개씩, 두 줄로 10개
+            for i, item in enumerate(top10):
+                with cols[i % 5]:
+                    img = item.get("썸네일", "")
+                    link = item.get("링크", "")
+                    name = item.get("상품명", "")
+                    price = item.get("가격", 0)
+                    mall = item.get("판매처", "")
+                    rank = item.get("순위", i + 1)
+                    badge = get_catalog_badge(item.get("productType", 0))
+
+                    # 썸네일 (클릭 시 새 탭으로 상품 페이지 이동)
+                    if img:
+                        st.markdown(
+                            f'<a href="{link}" target="_blank">'
+                            f'<img src="{img}" style="width:100%;border-radius:8px;"></a>',
+                            unsafe_allow_html=True)
+                    # 순위 + 상품명 (클릭 가능)
+                    short_name = name if len(name) <= 22 else name[:22] + "…"
+                    st.markdown(f"**{rank}위** · [{short_name}]({link})")
+                    st.markdown(f"💰 **{price:,}원**")
+                    st.caption(f"{mall} {badge}")
+            st.divider()
         if not found_items:
             st.error(f"⚠️ 현재 '{TARGET_STORE}' 상품이 400위 내 비노출 중입니다.")
         else:
