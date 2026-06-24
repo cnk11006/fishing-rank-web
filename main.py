@@ -775,6 +775,11 @@ def analyze_brand_contribution(uploaded_files, ours_ids, min_orders=3):
     order_col = find_col(["주문번호", "주문 번호", "구매번호"])
     pid_col   = find_col(["상품번호", "상품 번호"])
     name_col  = find_col(["상품명", "상품 명", "제품명"])
+    
+    # '주문번호' 정확히 매칭 ('상품주문번호'와 구분)
+    exact_order = [c for c in cols if str(c).strip() == "주문번호"]
+    if exact_order:
+        order_col = exact_order[0]
 
     if not order_col or not pid_col:
         return None, cols, 0
