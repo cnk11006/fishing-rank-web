@@ -715,6 +715,115 @@ def analyze_cross_purchase(uploaded_files, target_query):
             "우리 제품": "✅" if is_ours else "",
         })
     return rows, cols, total_orders
+# ---------- [11-3] 자사 상품번호 마스터 로딩 ----------
+def load_product_master(master_file, our_brand="피싱템"):
+    """상품 마스터 엑셀(상품번호/상품명/구분) → 자사 상품번호 집합 반환."""
+    if master_file is None:
+        return None, "마스터 파일이 없습니다."
+    try:
+        m = pd.read_excel(master_file, dtype=str)
+    except Exception as e:
+        return None, f"마스터 파일 읽기 오류: {e}"
+    m = m.fillna("")
+    cols = list(m.columns)
+
+    def find_col(cands):
+        for c in cols:
+            for kw in cands:
+                if kw in str(c):
+                    return c
+        return None
+
+    pid_col = find_col(["상품번호"])
+    gubun_col = find_col(["구분", "브랜드"])
+    if not pid_col or not gubun_col:
+        return None, f"'상품번호' 또는 '구분' 열을 찾지 못했습니다. 파일의 열: {cols}"
+
+    m[pid_col] = m[pid_col].astype(str).str.strip()
+    m[gubun_col] = m[gubun_col].astype(str).str.strip()
+    ours_ids = set(m.loc[m[gubun_col] == our_brand, pid_col])
+    ours_ids.discard("")
+    return ours_ids, None
+
+
+# ---------- [11-2] 타사 제품별 자사 동반구매율 분석 ----------
+def analyze_brand_contribution(uploaded_files, ours_ids, min_orders=3):
+    """주문 엑셀(여러 개) + 자사 상품번호 집합 → 타사 제품별 자사 동반구매율 순위."""
+    if not uploaded_files:
+        return None, [], 0
+
+    frames = []
+    for f in uploaded_files:
+        try:
+            df = pd.read_excel(f, dtype=str)
+            frames.append(df)
+        except Exception:
+            continue
+    if not frames:
+        return None, [], 0
+
+    data = pd.concat(frames, ignore_index=True).fillna("")
+    cols = list(data.columns)
+
+    def find_col(cands):
+        for c in cols:
+            for kw in cands:
+                if kw in str(c):
+                    return c
+        return None
+
+    order_col = find_col(["주문번호", "주문 번호", "구매번호"])
+    pid_col   = find_col(["상품번호", "상품 번호"])
+    name_col  = find_col(["상품명", "상품 명", "제품명"])
+
+    if not order_col or not pid_col:
+        return None, cols, 0
+
+    data[order_col] = data[order_col].astype(str).str.strip()
+    data[pid_col]   = data[pid_col].astype(str).str.strip()
+    if name_col:
+        data[name_col] = data[name_col].astype(str).str.strip()
+
+    data = data[(data[order_col] != "") & (data[pid_col] != "")]
+
+    ours_ids = set(str(x).strip() for x in ours_ids)
+
+    orders_with_ours = set(
+        data.loc[data[pid_col].isin(ours_ids), order_col].unique()
+    )
+
+    pid_to_name = {}
+    if name_col:
+        for _, r in data.iterrows():
+            pid = r[pid_col]
+            if pid not in pid_to_name and r[name_col]:
+                pid_to_name[pid] = r[name_col]
+
+    pairs = data[[order_col, pid_col]].drop_duplicates()
+    pairs = pairs[~pairs[pid_col].isin(ours_ids)]
+
+    rows = []
+    counted_orders = set()
+    for pid, grp in pairs.groupby(pid_col):
+        order_ids = set(grp[order_col])
+        total = len(order_ids)
+        if total < min_orders:
+            continue
+        with_ours = len(order_ids & orders_with_ours)
+        rate = round(with_ours / total * 100, 1) if total else 0.0
+        counted_orders |= order_ids
+        rows.append({
+            "타사 상품번호": pid,
+            "타사 제품": pid_to_name.get(pid, ""),
+            "주문 건수": total,
+            "자사 동반 주문": with_ours,
+            "자사 동반구매율(%)": rate,
+        })
+
+    rows.sort(key=lambda x: (x["자사 동반구매율(%)"], x["주문 건수"]), reverse=True)
+
+    total_target_orders = len(counted_orders)
+    return rows, cols, total_target_orders
 
 # =============================================
 # [블록 3/4] 상세분석 패널 + 로그인 + 메인 + Tab1
@@ -1657,6 +1766,49 @@ with tab5:
                             mime="text/csv")
             except Exception as e:
                 st.error(f"주문 파일을 읽는 중 오류: {e}")
+                
+    # ===== 타사 제품별 자사 동반구매율 순위 =====
+    st.divider()
+    st.markdown("## 📊 타사 제품별 자사 동반구매율 순위")
+    st.caption("상품 마스터 엑셀(상품번호·상품명·구분)과 주문 엑셀을 올리면, "
+               "어떤 타사 제품이 우리 피싱템을 잘 불러오는지 순위가 나옵니다.")
+
+    master_file = st.file_uploader("상품 마스터 엑셀 올리기 (상품번호·상품명·구분)",
+                                   type=["xlsx"], key="master_uploader")
+    brand_files = st.file_uploader("주문 엑셀 올리기 (여러 개 가능)", type=["xlsx"],
+                                   key="brand_uploader", accept_multiple_files=True)
+    brand_min_orders = st.number_input("최소 주문 건수 (이보다 적게 팔린 타사 제품은 제외)",
+                                       min_value=1, value=3, step=1, key="brand_min_orders")
+    brand_btn = st.button("📊 동반구매율 순위 보기", type="primary", key="brand_search_btn")
+
+    if brand_btn:
+        if master_file is None:
+            st.warning("상품 마스터 엑셀을 먼저 올려주세요.")
+        elif not brand_files:
+            st.warning("주문 엑셀을 한 개 이상 올려주세요.")
+        else:
+            try:
+                ours_ids, err = load_product_master(master_file)
+                if err:
+                    st.error(err)
+                else:
+                    rows, cols, total_target_orders = analyze_brand_contribution(
+                        brand_files, ours_ids, min_orders=brand_min_orders)
+                    if rows is None:
+                        st.error(f"필요한 열(주문번호/상품번호)을 찾지 못했습니다. 파일의 열: {cols}")
+                    elif not rows:
+                        st.warning("조건에 맞는 타사 제품이 없습니다. 최소 주문 건수를 낮춰보세요.")
+                    else:
+                        st.success(f"✅ 자사 상품 {len(ours_ids)}개 기준, "
+                                   f"타사 제품 {len(rows)}개 분석 완료 (총 타사 주문 {total_target_orders}건)")
+                        df_brand = pd.DataFrame(rows)
+                        st.dataframe(df_brand, use_container_width=True, hide_index=True)
+                        csv = df_brand.to_csv(index=False).encode("utf-8-sig")
+                        st.download_button("📥 동반구매율 순위 CSV 다운로드", csv,
+                            file_name=f"타사제품_자사동반구매율_{datetime.now().strftime('%Y%m%d')}.csv",
+                            mime="text/csv")
+            except Exception as e:
+                st.error(f"분석 중 오류: {e}")
 
     if channel_file is None and product_file is None and search_file is None:
         st.info("위에서 엑셀 파일을 올리면 분석이 시작됩니다.")
