@@ -644,13 +644,23 @@ def analyze_search_file(uploaded_file):
     out["결제율(%)"] = (out["검색어"].map(lambda x: 0))  # 임시
     out["결제율(%)"] = (out["결제수"] / out["유입수"].replace(0, pd.NA) * 100).fillna(0).round(2)
     return out, cols
-    # ---------- [11] 동시구매(장바구니) 분석 ----------
-def analyze_cross_purchase(uploaded_file, target_query):
-    """주문 엑셀 → 특정 상품과 '같은 주문번호'에 함께 담긴 상품 분석.
-       target_query: 타사 상품명 일부 또는 상품번호"""
-    df = pd.read_excel(uploaded_file, dtype=str)
+    
+# ---------- [11] 동시구매(장바구니) 분석 ----------
+def analyze_cross_purchase(uploaded_files, target_query):
+    """주문 엑셀(여러 개) → 특정 상품과 '같은 주문번호'에 함께 담긴 상품 분석.
+       uploaded_files: 파일 리스트 / target_query: 타사 상품명 일부 또는 상품번호"""
+    if not isinstance(uploaded_files, (list, tuple)):
+        uploaded_files = [uploaded_files]
+    dfs = []
+    for f in uploaded_files:
+        try:
+            dfs.append(pd.read_excel(f, dtype=str))
+        except Exception:
+            continue
+    if not dfs:
+        return None, [], None
+    df = pd.concat(dfs, ignore_index=True)
 
-    # 열 이름 유연하게 찾기
     cols = list(df.columns)
     def find_col(cands):
         for c in cols:
@@ -659,10 +669,9 @@ def analyze_cross_purchase(uploaded_file, target_query):
                     return c
         return None
 
-    order_col = find_col(["주문번호"])          # '상품주문번호'보다 '주문번호'를 우선 매칭하도록 주의
+    order_col = find_col(["주문번호"])
     name_col  = find_col(["상품명"])
     pid_col   = find_col(["상품번호"])
-    qty_col   = find_col(["수량"])
 
     # '주문번호' 정확히 매칭 (상품주문번호와 구분)
     exact_order = [c for c in cols if str(c).strip() == "주문번호"]
@@ -675,18 +684,15 @@ def analyze_cross_purchase(uploaded_file, target_query):
     df = df.fillna("")
     q = str(target_query).strip()
 
-    # 타깃 상품이 들어있는 '주문번호' 찾기
     def is_target(row):
         return (q in str(row.get(name_col, ""))) or \
                (pid_col and q == str(row.get(pid_col, "")).strip())
     df["_is_target"] = df.apply(is_target, axis=1)
-    target_orders = set(df[df["_is_target"]]["_order"] if "_order" in df else
-                        df[df["_is_target"]][order_col])
+    target_orders = set(df[df["_is_target"]][order_col])
 
     if not target_orders:
         return [], cols, 0
 
-    # 해당 주문들 안에서 '타깃이 아닌' 상품들을 카운트
     sub = df[df[order_col].isin(target_orders)]
     from collections import Counter
     cnt = Counter()
@@ -1644,7 +1650,57 @@ with tab5:
                         mime="text/csv")
         except Exception as e:
             st.error(f"주문 파일을 읽는 중 오류: {e}")
+    # ===== 동시구매(장바구니) 분석 =====
+    st.divider()
+    st.markdown("## 🛒 동시구매 분석 (장바구니 교차구매)")
+    st.caption("주문 엑셀을 올리고, 기준이 될 타사 상품명(또는 상품번호)을 입력한 뒤 "
+               "'동시구매 조회'를 누르면 그 상품과 '한 주문에 함께 담긴' 상품들을 보여줍니다.")
+    with st.expander("📥 주문 엑셀은 어디서 받나요?"):
+        st.markdown("""
+스마트스토어센터 → 판매관리 → 주문 통합 관리(또는 주문 내역) → 기간 설정(넉넉히 3~6개월) → 엑셀 다운로드
+
+⚠️ 개인정보(구매자명·수취인명)는 분석에 쓰지 않습니다. 같은 고객 구분은 '구매자ID'로 합니다.
+        """)
+
+    order_file = st.file_uploader("주문 엑셀 올리기 (여러 개 가능)", type=["xlsx"],
+                                  key="order_uploader", accept_multiple_files=True)
+    target_q = st.text_input("기준 상품 (타사 상품명 일부 또는 상품번호)",
+                             key="cross_target")
+    cross_btn = st.button("🔍 동시구매 조회", type="primary", key="cross_search_btn")
+
+    if cross_btn:
+        if not order_file:
+            st.warning("주문 엑셀을 먼저 올려주세요.")
+        elif not target_q:
+            st.warning("기준 상품(상품명 일부 또는 상품번호)을 입력해주세요.")
+        else:
+            try:
+                rows, raw_cols, total_orders = analyze_cross_purchase(order_file, target_q)
+                if rows is None:
+                    st.error(f"필요한 열(주문번호/상품명)을 찾지 못했습니다. 이 파일의 열: {raw_cols}")
+                elif total_orders == 0:
+                    st.warning(f"'{target_q}'가 들어간 주문을 찾지 못했습니다. "
+                               "상품명 일부나 상품번호를 다시 확인해 주세요.")
+                else:
+                    st.success(f"✅ '{target_q}'가 포함된 주문 {total_orders}건을 찾았습니다.")
+                    if not rows:
+                        st.info("이 상품과 함께 담긴 다른 상품이 없습니다 (단독 구매만 있음).")
+                    else:
+                        df_cross = pd.DataFrame(rows)
+                        ours = df_cross[df_cross["우리 제품"] == "✅"]
+                        if not ours.empty:
+                            st.markdown("#### 🎯 우리 제품 동시구매 요약")
+                            st.info(f"이 상품이 포함된 {total_orders}건의 주문 중, "
+                                    "우리(피싱템) 제품이 함께 담긴 경우가 있습니다. 아래 ✅ 표시를 확인하세요.")
+                        st.markdown("#### 🛒 함께 담긴 상품 순위")
+                        st.dataframe(df_cross, use_container_width=True, hide_index=True)
+                        csv = df_cross.to_csv(index=False).encode("utf-8-sig")
+                        st.download_button("📥 동시구매 분석 CSV 다운로드", csv,
+                            file_name=f"동시구매분석_{datetime.now().strftime('%Y%m%d')}.csv",
+                            mime="text/csv")
+            except Exception as e:
+                st.error(f"주문 파일을 읽는 중 오류: {e}")
 
     if channel_file is None and product_file is None and search_file is None:
         st.info("위에서 엑셀 파일을 올리면 분석이 시작됩니다.")
-            
+           
