@@ -1600,6 +1600,50 @@ with tab5:
         except Exception as e:
             st.error(f"검색채널 파일을 읽는 중 오류: {e}")
         st.divider()
+    # ===== 동시구매(장바구니) 분석 =====
+    st.divider()
+    st.markdown("## 🛒 동시구매 분석 (장바구니 교차구매)")
+    st.caption("주문 엑셀을 올리고, 기준이 될 타사 상품명(또는 상품번호)을 입력하면 "
+               "그 상품과 '한 주문에 함께 담긴' 상품들을 보여줍니다.")
+    with st.expander("📥 주문 엑셀은 어디서 받나요?"):
+        st.markdown("""
+스마트스토어센터 → 판매관리 → 주문 통합 관리(또는 주문 내역) → 기간 설정(넉넉히 3~6개월) → 엑셀 다운로드
+
+⚠️ 개인정보(구매자명·수취인명)는 분석에 쓰지 않습니다. 같은 고객 구분은 '구매자ID'로 합니다.
+        """)
+
+    order_file = st.file_uploader("주문 엑셀 올리기", type=["xlsx"], key="order_uploader")
+    target_q = st.text_input("기준 상품 (타사 상품명 일부 또는 상품번호)",
+                             key="cross_target")
+
+    if order_file is not None and target_q:
+        try:
+            rows, raw_cols, total_orders = analyze_cross_purchase(order_file, target_q)
+            if rows is None:
+                st.error(f"필요한 열(주문번호/상품명)을 찾지 못했습니다. 이 파일의 열: {raw_cols}")
+            elif total_orders == 0:
+                st.warning(f"'{target_q}'가 들어간 주문을 찾지 못했습니다. "
+                           "상품명 일부나 상품번호를 다시 확인해 주세요.")
+            else:
+                st.success(f"✅ '{target_q}'가 포함된 주문 {total_orders}건을 찾았습니다.")
+                if not rows:
+                    st.info("이 상품과 함께 담긴 다른 상품이 없습니다 (단독 구매만 있음).")
+                else:
+                    df_cross = pd.DataFrame(rows)
+                    ours = df_cross[df_cross["우리 제품"] == "✅"]
+                    if not ours.empty:
+                        our_cnt = int(ours["함께 구매 건수"].sum())
+                        st.markdown(f"#### 🎯 우리 제품 동시구매 요약")
+                        st.info(f"이 상품을 산 {total_orders}건의 주문 중, "
+                                f"우리(피싱템) 제품이 함께 담긴 경우가 있습니다. 아래 ✅ 표시를 확인하세요.")
+                    st.markdown("#### 🛒 함께 담긴 상품 순위")
+                    st.dataframe(df_cross, use_container_width=True, hide_index=True)
+                    csv = df_cross.to_csv(index=False).encode("utf-8-sig")
+                    st.download_button("📥 동시구매 분석 CSV 다운로드", csv,
+                        file_name=f"동시구매분석_{datetime.now().strftime('%Y%m%d')}.csv",
+                        mime="text/csv")
+        except Exception as e:
+            st.error(f"주문 파일을 읽는 중 오류: {e}")
 
     if channel_file is None and product_file is None and search_file is None:
         st.info("위에서 엑셀 파일을 올리면 분석이 시작됩니다.")
