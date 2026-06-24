@@ -644,6 +644,72 @@ def analyze_search_file(uploaded_file):
     out["결제율(%)"] = (out["검색어"].map(lambda x: 0))  # 임시
     out["결제율(%)"] = (out["결제수"] / out["유입수"].replace(0, pd.NA) * 100).fillna(0).round(2)
     return out, cols
+    # ---------- [11] 동시구매(장바구니) 분석 ----------
+def analyze_cross_purchase(uploaded_file, target_query):
+    """주문 엑셀 → 특정 상품과 '같은 주문번호'에 함께 담긴 상품 분석.
+       target_query: 타사 상품명 일부 또는 상품번호"""
+    df = pd.read_excel(uploaded_file, dtype=str)
+
+    # 열 이름 유연하게 찾기
+    cols = list(df.columns)
+    def find_col(cands):
+        for c in cols:
+            for kw in cands:
+                if kw in str(c):
+                    return c
+        return None
+
+    order_col = find_col(["주문번호"])          # '상품주문번호'보다 '주문번호'를 우선 매칭하도록 주의
+    name_col  = find_col(["상품명"])
+    pid_col   = find_col(["상품번호"])
+    qty_col   = find_col(["수량"])
+
+    # '주문번호' 정확히 매칭 (상품주문번호와 구분)
+    exact_order = [c for c in cols if str(c).strip() == "주문번호"]
+    if exact_order:
+        order_col = exact_order[0]
+
+    if not order_col or not name_col:
+        return None, cols, None
+
+    df = df.fillna("")
+    q = str(target_query).strip()
+
+    # 타깃 상품이 들어있는 '주문번호' 찾기
+    def is_target(row):
+        return (q in str(row.get(name_col, ""))) or \
+               (pid_col and q == str(row.get(pid_col, "")).strip())
+    df["_is_target"] = df.apply(is_target, axis=1)
+    target_orders = set(df[df["_is_target"]]["_order"] if "_order" in df else
+                        df[df["_is_target"]][order_col])
+
+    if not target_orders:
+        return [], cols, 0
+
+    # 해당 주문들 안에서 '타깃이 아닌' 상품들을 카운트
+    sub = df[df[order_col].isin(target_orders)]
+    from collections import Counter
+    cnt = Counter()
+    for _, r in sub.iterrows():
+        nm = str(r.get(name_col, "")).strip()
+        if not nm:
+            continue
+        if (q in nm) or (pid_col and q == str(r.get(pid_col, "")).strip()):
+            continue   # 타깃 상품 자기 자신은 제외
+        cnt[nm] += 1
+
+    total_orders = len(target_orders)
+    rows = []
+    for nm, c in cnt.most_common():
+        is_ours = TARGET_STORE in nm
+        rows.append({
+            "함께 산 상품": nm,
+            "함께 구매 건수": c,
+            "동시구매율(%)": round(c / total_orders * 100, 1),
+            "우리 제품": "✅" if is_ours else "",
+        })
+    return rows, cols, total_orders
+
 # =============================================
 # [블록 3/4] 상세분석 패널 + 로그인 + 메인 + Tab1
 # =============================================
