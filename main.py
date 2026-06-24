@@ -1606,23 +1606,18 @@ with tab5:
         except Exception as e:
             st.error(f"검색채널 파일을 읽는 중 오류: {e}")
         st.divider()
-
-스마트스토어센터 → 판매관리 → 주문 통합 관리(또는 주문 내역) → 기간 설정(넉넉히 3~6개월) → 엑셀 다운로드
-
-⚠️ 개인정보(구매자명·수취인명)는 분석에 쓰지 않습니다. 같은 고객 구분은 '구매자ID'로 합니다.
-        """)
-
+        
     # ===== 동시구매(장바구니) 분석 =====
     st.divider()
     st.markdown("## 🛒 동시구매 분석 (장바구니 교차구매)")
     st.caption("주문 엑셀을 올리고, 기준이 될 타사 상품명(또는 상품번호)을 입력한 뒤 "
                "'동시구매 조회'를 누르면 그 상품과 '한 주문에 함께 담긴' 상품들을 보여줍니다.")
-    with st.expander("📥 주문 엑셀은 어디서 받나요?"):
-        st.markdown("""
-스마트스토어센터 → 판매관리 → 주문 통합 관리(또는 주문 내역) → 기간 설정(넉넉히 3~6개월) → 엑셀 다운로드
-
-⚠️ 개인정보(구매자명·수취인명)는 분석에 쓰지 않습니다. 같은 고객 구분은 '구매자ID'로 합니다.
-        """)
+    with st.expander("주문 엑셀은 어디서 받나요?"):
+        st.markdown(
+            "스마트스토어센터 → 판매관리 → 주문 통합 관리(또는 주문 내역) → "
+            "기간 설정(넉넉히 3~6개월) → 엑셀 다운로드\n\n"
+            "※ 개인정보(구매자명·수취인명)는 분석에 쓰지 않습니다. "
+            "같은 고객 구분은 '구매자ID'로 합니다.")
 
     order_file = st.file_uploader("주문 엑셀 올리기 (여러 개 가능)", type=["xlsx"],
                                   key="order_uploader", accept_multiple_files=True)
@@ -1665,4 +1660,3 @@ with tab5:
 
     if channel_file is None and product_file is None and search_file is None:
         st.info("위에서 엑셀 파일을 올리면 분석이 시작됩니다.")
-           
