@@ -780,6 +780,23 @@ def _tag(name, tag_dict):
     n = str(name).replace(" ", "")
     return [t for t, kws in tag_dict.items() if any(k.replace(" ", "") in n for k in kws)]
 
+def _get_volume(query, cache):
+    """검색량을 공백 제거 기준으로 정확히 매칭해서 가져오기"""
+    if query in cache:
+        return cache[query]
+    stat = get_keyword_stats([query])
+    qn = query.replace(" ", "")
+    vol = 0
+    for s in stat:
+        if s["키워드"].replace(" ", "") == qn:   # 정확히 일치하는 항목 우선
+            vol = s["총 검색량"]
+            break
+    else:
+        if stat:               # 정확 매칭 실패 시 첫 결과라도 사용
+            vol = stat[0]["총 검색량"]
+    cache[query] = vol
+    return vol
+
 def build_keywords(brands, seasons, genres):
     """브랜드 × 시즌/어종 × 제품군 조합 키워드 생성 (빈 항목은 자동 제외)"""
     combos = []
@@ -860,11 +877,7 @@ def find_candidates(brands, seasons, genres, client_id, client_secret,
         items, err = collect_rank_light(kw, client_id, client_secret, limit=max_rank)
         if err or not items:
             continue
-        # 검색량(수요) 캐싱
-        if kw not in vol_cache:
-            stat = get_keyword_stats([kw])
-            vol_cache[kw] = stat[0]["총 검색량"] if stat else 0
-        vol = vol_cache[kw]
+        # ★변경★ 조합 전체로 검색량을 구하던 부분 삭제 (아래 상품별로 이동)
         for it in items:
             rank = it["순위"]
             name = it["상품명"]; nclean = name.replace(" ", "")
@@ -885,7 +898,12 @@ def find_candidates(brands, seasons, genres, client_id, client_secret,
             ges = _tag(name, GENRE_TAGS) or ["기타"]
             # 우리가 이 (브랜드,어종,장르)를 이미 파는가?
             already = any((bkey, sp, ge) in coverage for sp in sps for ge in ges)
+
+            # ★변경★ 검색량을 '어종+제품군' 단위로 조회 (조합 전체로는 0이 잘 나오므로)
+            vol_query = f"{sps[0]} {ges[0]}"          # 예: "갈치 채비"
+            vol = _get_volume(vol_query, vol_cache)
             score = int(vol * (1 / rank)) if rank else 0
+
             key = nclean[:40]
             if key not in cands or rank < cands[key]["최고순위"]:
                 cands[key] = {
@@ -893,6 +911,7 @@ def find_candidates(brands, seasons, genres, client_id, client_secret,
                     "타사 상품명": name, "판매처": mall,
                     "최고순위": rank, "가격": it["가격"],
                     "어종": ", ".join(sps), "장르": ", ".join(ges),
+                    "검색량기준": vol_query,          # ★추가★ 어떤 키워드로 검색량을 쟀는지 표시
                     "키워드검색량": vol, "잠재력점수": score,
                     "취급여부": "이미 취급군" if already else "🆕 미취급",
                     "링크": it["링크"],
@@ -1906,7 +1925,7 @@ with tab6:
                             "태그 사전에 어종/제품군이 부족할 수 있습니다.")
                 else:
                     show_cols = ["브랜드","타사 상품명","어종","장르","최고순위",
-                                 "키워드검색량","잠재력점수","가격","검색키워드","판매처","링크"]
+                                 "검색량기준","키워드검색량","잠재력점수","가격","검색키워드","판매처","링크"]
                     st.dataframe(new_only[show_cols],
                                  use_container_width=True, hide_index=True)
 
