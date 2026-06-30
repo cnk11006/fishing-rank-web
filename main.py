@@ -782,17 +782,18 @@ def _tag(name, tag_dict):
 
 def _get_volume(query, cache):
     """검색량을 공백 제거 기준으로 정확히 매칭해서 가져오기"""
+    query = str(query).replace(" ", "")   # ★추가: 공백 제거 후 조회
     if query in cache:
         return cache[query]
     stat = get_keyword_stats([query])
-    qn = query.replace(" ", "")
+    qn = query
     vol = 0
     for s in stat:
-        if s["키워드"].replace(" ", "") == qn:   # 정확히 일치하는 항목 우선
+        if s["키워드"].replace(" ", "") == qn:
             vol = s["총 검색량"]
             break
     else:
-        if stat:               # 정확 매칭 실패 시 첫 결과라도 사용
+        if stat:
             vol = stat[0]["총 검색량"]
     cache[query] = vol
     return vol
@@ -900,7 +901,8 @@ def find_candidates(brands, seasons, genres, client_id, client_secret,
             already = any((bkey, sp, ge) in coverage for sp in sps for ge in ges)
 
             # ★변경★ 검색량을 '어종+제품군' 단위로 조회 (조합 전체로는 0이 잘 나오므로)
-            vol_query = f"{sps[0]} {ges[0]}"          # 예: "갈치 채비"
+            vol_query_disp = f"{sps[0]} {ges[0]}"     # 표에 보여줄 용도 (공백 O)
+            vol_query = f"{sps[0]}{ges[0]}"           # 실제 조회용 (공백 X)
             vol = _get_volume(vol_query, vol_cache)
             score = int(vol * (1 / rank)) if rank else 0
 
@@ -911,7 +913,7 @@ def find_candidates(brands, seasons, genres, client_id, client_secret,
                     "타사 상품명": name, "판매처": mall,
                     "최고순위": rank, "가격": it["가격"],
                     "어종": ", ".join(sps), "장르": ", ".join(ges),
-                    "검색량기준": vol_query,          # ★추가★ 어떤 키워드로 검색량을 쟀는지 표시
+                    "검색량기준": vol_query_disp,          # 변경(표에 공백 있는 형태로 예쁘게 표기)
                     "키워드검색량": vol, "잠재력점수": score,
                     "취급여부": "이미 취급군" if already else "🆕 미취급",
                     "링크": it["링크"],
