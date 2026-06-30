@@ -16,6 +16,7 @@ import base64
 import urllib.parse
 import os
 import json
+import re
 
 # ---------- [0] 페이지 설정 & CSS ----------
 st.set_page_config(page_title="피싱템 순위 검색기", layout="wide", page_icon="🎣")
@@ -798,6 +799,19 @@ def _get_volume(query, cache):
     cache[query] = vol
     return vol
 
+def _dedup_key(name, brand):
+    """상품명에서 중복 판단용 키 생성 (모델명/품번 우선)"""
+    n = str(name).upper()
+    # 영문+숫자 조합 모델명 패턴 추출 (예: KF-212, BKC300, SP-5000)
+    models = re.findall(r'[A-Z]{1,5}[-\s]?\d{2,5}', n)
+    if models:
+        # 가장 긴 모델명을 대표 키로 (공백/하이픈 제거)
+        model = max(models, key=len).replace(" ", "").replace("-", "")
+        return f"{normalize_brand(brand)}|{model}"
+    # 모델명 없으면 브랜드 + 상품명 앞 핵심 글자
+    nclean = str(name).replace(" ", "")
+    return f"{normalize_brand(brand)}|{nclean[:25]}"
+
 def build_keywords(brands, seasons, genres):
     """브랜드 × 시즌/어종 × 제품군 조합 키워드 생성 (빈 항목은 자동 제외)"""
     combos = []
@@ -906,7 +920,7 @@ def find_candidates(brands, seasons, genres, client_id, client_secret,
             vol = _get_volume(vol_query, vol_cache)
             score = int(vol * (1 / rank)) if rank else 0
 
-            key = nclean[:40]
+            key = _dedup_key(name, matched_brand)
             if key not in cands or rank < cands[key]["최고순위"]:
                 cands[key] = {
                     "검색키워드": kw, "브랜드": matched_brand,
