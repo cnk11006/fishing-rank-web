@@ -921,20 +921,50 @@ def find_candidates(brands, seasons, genres, client_id, client_secret,
             score = int(vol * (1 / rank)) if rank else 0
 
             key = _dedup_key(name, matched_brand)
-            if key not in cands or rank < cands[key]["최고순위"]:
+            if key not in cands:
+                # 새 상품 → 등록 (판매처 1곳, 가격 1개로 시작)
                 cands[key] = {
-                    "검색키워드": kw, "브랜드": matched_brand,
-                    "타사 상품명": name, "판매처": mall,
-                    "최고순위": rank, "가격": it["가격"],
-                    "어종": ", ".join(sps), "장르": ", ".join(ges),
-                    "검색량기준": vol_query_disp,          # 변경(표에 공백 있는 형태로 예쁘게 표기)
-                    "키워드검색량": vol, "잠재력점수": score,
+                    "검색키워드": kw,
+                    "브랜드": matched_brand,
+                    "타사 상품명": name,
+                    "판매처": mall,
+                    "최고순위": rank,
+                    "가격": it["가격"],
+                    "어종": ", ".join(sps),
+                    "장르": ", ".join(ges),
+                    "검색량기준": vol_query_disp,
+                    "키워드검색량": vol,
+                    "잠재력점수": score,
                     "취급여부": "이미 취급군" if already else "🆕 미취급",
                     "링크": it["링크"],
+                    "_판매처목록": {mall},          # 중복 카운트용
+                    "_가격목록": [it["가격"]],        # 가격대 분석용
                 }
+            else:
+                # 이미 있는 상품 → 판매처/가격 누적, 최고순위 갱신
+                c = cands[key]
+                c["_판매처목록"].add(mall)
+                c["_가격목록"].append(it["가격"])
+                if rank < c["최고순위"]:
+                    c["최고순위"] = rank
+                    c["판매처"] = mall      # 최고순위 판매처로 대표 갱신
+                    c["타사 상품명"] = name
+                    c["링크"] = it["링크"]
+                    c["잠재력점수"] = int(vol * (1 / rank)) if rank else 0
+
         time.sleep(0.1)
     prog.progress(1.0, text="✅ 완료!")
     rows = list(cands.values())
+
+    # ★ 판매처 수 / 가격대 집계
+    for r in rows:
+        malls = r.pop("_판매처목록", set())
+        prices = r.pop("_가격목록", [])
+        prices = [p for p in prices if isinstance(p, (int, float)) and p > 0]
+        r["판매처수"] = len(malls)
+        r["최저가"] = min(prices) if prices else 0
+        r["최고가"] = max(prices) if prices else 0
+
     rows.sort(key=lambda x: (x["취급여부"] != "🆕 미취급", -x["잠재력점수"]))
     return rows
 
@@ -1940,7 +1970,7 @@ with tab6:
                     st.info("미취급 후보가 없습니다. 이미 잘 갖춰져 있거나, "
                             "태그 사전에 어종/제품군이 부족할 수 있습니다.")
                 else:
-                    show_cols = ["브랜드","타사 상품명","어종","장르","최고순위",
+                    show_cols = ["브랜드","타사 상품명","어종","장르","최고순위","판매처수","최저가","최고가",
                                  "검색량기준","키워드검색량","잠재력점수","가격","검색키워드","판매처","링크"]
                     st.dataframe(new_only[show_cols],
                                  use_container_width=True, hide_index=True)
