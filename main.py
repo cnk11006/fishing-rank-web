@@ -43,6 +43,11 @@ st.markdown("""
     }
     .stTabs [data-baseweb="tab-list"] { gap: 20px; }
     .stTabs [data-baseweb="tab"] { font-size: 1.1rem; font-weight: 600; padding-bottom: 10px; }
+
+    /* 비활성 탭 패널을 확실히 숨겨 렌더링 순간 전부 펼쳐지는 현상 방지 */
+    .stTabs [data-baseweb="tab-panel"][hidden] { display: none !important; }
+    .stTabs [aria-selected="false"] + [role="tabpanel"] { display: none !important; }
+    button[role="tab"][aria-selected="false"] ~ div[role="tabpanel"] { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
 
