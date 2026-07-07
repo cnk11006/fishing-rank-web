@@ -1381,19 +1381,27 @@ with tab3:
             st.download_button("📥 CSV 다운로드", csv,
                 file_name=f"{ak}_키워드분석_{datetime.now().strftime('%Y%m%d')}.csv",
                 mime="text/csv", use_container_width=True)
-
+            
 # ---------- TAB 4 : 광고 진단(A) & 시즌(B) ----------
 with tab4:
     st.subheader("📢 CPC 광고 진단 & 시즌 전략")
-    sub_a, sub_b = st.tabs(["🩺 쇼핑광고 진단", "📅 시즌·추세 데이터"])
+    # ★ 중첩 탭(st.tabs) 대신 radio로 교체 → 탭 렌더링 글리치 방지
+    tab4_view = st.radio(
+        "보기 선택",
+        ["🩺 쇼핑광고 진단", "📅 시즌·추세 데이터"],
+        horizontal=True, key="tab4_view"
+    )
 
-    with sub_a:
+    # ============================================================
+    # (A) 쇼핑광고 진단
+    # ============================================================
+    if tab4_view == "🩺 쇼핑광고 진단":
         st.caption("쇼핑광고 소재 성과를 불러와 자동 진단합니다. 빠른 확인은 '선택 진단', "
                    "정기 점검은 '전체 진단'을 사용하세요.")
         diag_mode = st.radio("진단 방식", ["⚡ 선택 진단 (빠름)", "🩺 전체 진단 (전수·느림)"],
-                             horizontal=True)
+                             horizontal=True, key="diag_mode")
         diag_days = st.selectbox("진단 기간", [7, 14, 30], index=0,
-                                 format_func=lambda x: f"최근 {x}일")
+                                 format_func=lambda x: f"최근 {x}일", key="diag_days")
         with st.spinner("📡 캠페인 목록 불러오는 중..."):
             campaigns = ad_get_campaigns()
         shopping_camps = [c for c in campaigns
@@ -1542,7 +1550,10 @@ with tab4:
                     mime="text/csv")
                 st.caption("※ 품질지수는 쇼핑광고 소재 기준(1~10)입니다.")
 
-    with sub_b:
+    # ============================================================
+    # (B) 시즌·추세 데이터
+    # ============================================================
+    else:
         st.caption("누적된 순위 기록으로 시즌 진입 시점과 추세를 파악합니다.")
         with st.spinner("📊 데이터 불러오는 중..."):
             sh_b = get_google_sheet()
@@ -1649,6 +1660,7 @@ with tab4:
                         sorted([{"월":m,"수집건수":c} for m,c in month_count.items()],
                                key=lambda x:x["월"]))
                     st.bar_chart(df_month.set_index("월")["수집건수"])
+
 # =============================================
 # [블록 5/5] tab5(기존) + ★tab6 사입 후보 발굴(신규)★
 # =============================================
