@@ -1131,10 +1131,7 @@ if active_tab == "🔍 순위 검색":
                 found_items, price_top10, top100_items, err = collect_rank_data(
                     keyword, CLIENT_ID, CLIENT_SECRET)
             if err: st.error(err)
-            if found_items:
-                with st.spinner("📊 구글 시트 기록 중..."):
-                    if save_to_sheet(keyword, found_items):
-                        st.success("✅ 구글 시트 자동 저장 완료!")
+            # ★ 검색 시에는 시트에 저장하지 않음 (탭 누적 방지 → 속도 유지)
             st.session_state["search_keyword"] = keyword
             st.session_state["search_results"] = {
                 "found_items":found_items,"price_top10":price_top10,"top100_items":top100_items}
@@ -1197,6 +1194,8 @@ if active_tab == "🔍 순위 검색":
             st.error(f"⚠️ 현재 '{TARGET_STORE}' 상품이 400위 내 비노출 중입니다.")
         else:
             st.success(f"✅ 총 {len(found_items)}개의 자사 상품 발견!")
+            st.info("💾 아래에서 저장하고 싶은 상품을 체크하고 '등록' 버튼을 누르면, "
+                    "선택한 상품만 구글 시트에 기록됩니다. (검색만으로는 저장되지 않습니다)")
             st.markdown("### 📌 선택 상품 모니터링 바로 등록")
             with st.form("add_monitor_form"):
                 checked = {}
@@ -1212,28 +1211,34 @@ if active_tab == "🔍 순위 검색":
                                 else: st.success("✅ 독립 노출")
                                 st.markdown(f"**[{item['상품명']}]({item['링크']})**")
                                 checked[item['상품명']] = st.checkbox(
-                                    "모니터링 담기",
+                                    "저장 & 모니터링 담기",
                                     key=f"chk_{item['순위']}_{item['상품명'][:10]}")
                                 st.caption(f"🏪 {item['판매처']}")
                                 if item["가격"]>0 and avg_price>0:
                                     d = int((item["가격"]-avg_price)/avg_price*100)
                                     ds = f"📈 TOP10보다 {abs(d)}% 비쌈" if d>0 else f"📉 TOP10보다 {abs(d)}% 저렴"
                                     st.caption(f"💴 {item['가격']:,}원"); st.caption(ds)
-                submit = st.form_submit_button("🚀 선택 상품 모니터링 등록",
+                submit = st.form_submit_button("🚀 선택 상품 저장 & 모니터링 등록",
                                                type="primary", use_container_width=True)
                 if submit:
                     sel = [n for n,c in checked.items() if c]
                     if not sel: st.warning("선택된 상품이 없습니다.")
                     else:
+                        # ★ 체크된 상품만 추려서 구글 시트에 저장
+                        selected_items = [it for it in found_items if it["상품명"] in sel]
                         cnt = 0
                         for pn in sel:
                             ok,_ = add_monitor_keyword(saved_kw, memo=f"등록상품:{pn}")
                             if ok: cnt += 1
+                        if selected_items:
+                            with st.spinner("📊 구글 시트에 선택 상품 기록 중..."):
+                                save_to_sheet(saved_kw, selected_items)
                         if cnt>0:
-                            st.success(f"✅ {cnt}개 등록 완료!")
+                            st.success(f"✅ {cnt}개 저장 & 등록 완료!")
                             load_monitor_keywords.clear(); load_all_sheets_at_once.clear()
                             time.sleep(1); st.rerun()
-                        else: st.warning("이미 등록되었거나 오류 발생.")
+                        else:
+                            st.warning("이미 등록된 상품입니다. (시트 기록은 갱신되었습니다)")
 
 # ---------- TAB 2 : 모니터링 관리 ----------
 if active_tab == "📋 모니터링 관리":
