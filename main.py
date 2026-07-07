@@ -18,6 +18,8 @@ import os
 import json
 import re
 
+st.caption(f"streamlit version: {st.__version__}")
+
 # ---------- [0] 페이지 설정 & CSS ----------
 st.set_page_config(page_title="피싱템 순위 검색기", layout="wide", page_icon="🎣")
 st.markdown("""
