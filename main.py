@@ -1092,17 +1092,17 @@ st.link_button("📊 구글 시트에서 전체 기록 보기",
                f"https://docs.google.com/spreadsheets/d/{SHEET_ID}")
 st.markdown("<br>", unsafe_allow_html=True)
 
-# ★★★ 탭이 6개로 늘었습니다 (마지막에 사입 후보 발굴 추가) ★★★
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-    ["🔍 순위 검색", "📋 모니터링 관리", "📊 키워드 분석",
-     "📢 광고 진단 & 시즌", "📂 유입·상품 분석", "🎯 사입 후보 발굴"])
+TAB_LABELS = ["🔍 순위 검색", "📋 모니터링 관리", "📊 키워드 분석",
+              "📢 광고 진단 & 시즌", "📂 유입·상품 분석", "🎯 사입 후보 발굴"]
+active_tab = st.radio("메뉴", TAB_LABELS, horizontal=True,
+                      label_visibility="collapsed", key="main_menu")
 
 # =============================================
 # [블록 4/5] tab1 + tab2 + tab3 + tab4 (기존 동일)
 # =============================================
 
 # ---------- TAB 1 : 순위 검색 ----------
-with tab1:
+if active_tab == "🔍 순위 검색":
     keyword = st.text_input("수색할 키워드를 입력하세요 (예: 타이라바 로드)")
     if "search_results" not in st.session_state: st.session_state["search_results"] = None
     if "search_keyword" not in st.session_state: st.session_state["search_keyword"] = ""
@@ -1220,7 +1220,7 @@ with tab1:
                         else: st.warning("이미 등록되었거나 오류 발생.")
 
 # ---------- TAB 2 : 모니터링 관리 ----------
-with tab2:
+if active_tab == "📋 모니터링 관리":
     st.subheader("📋 모니터링 키워드 관리")
     with st.spinner("목록 불러오는 중..."):
         sh = get_google_sheet()
@@ -1342,7 +1342,7 @@ with tab2:
             load_all_sheets_at_once.clear(); time.sleep(1); st.rerun()
 
 # ---------- TAB 3 : 키워드 분석 ----------
-with tab3:
+if active_tab == "📊 키워드 분석":
     st.subheader("📊 키워드 분석")
     col_kw, col_btn = st.columns([4,1])
     with col_kw:
@@ -1384,7 +1384,7 @@ with tab3:
                 mime="text/csv", use_container_width=True)
 
 # ---------- TAB 4 : 광고 진단(A) & 시즌(B) ----------
-with tab4:
+if active_tab == "📢 광고 진단 & 시즌":
     st.subheader("📢 CPC 광고 진단 & 시즌 전략")
     # ★ 중첩 탭(st.tabs) 대신 radio로 교체 → 탭 렌더링 글리치 방지
     tab4_view = st.radio(
@@ -1667,7 +1667,7 @@ with tab4:
 # =============================================
 
 # ---------- TAB 5 : 유입·상품 분석 (엑셀 업로드) ----------
-with tab5:
+if active_tab == "📂 유입·상품 분석":
     st.subheader("📂 유입·상품 분석")
     st.caption("스마트스토어에서 받은 엑셀(.xlsx)을 올리면 자동으로 분석합니다. "
                "두 파일은 따로 올려도 됩니다.")
@@ -1911,7 +1911,7 @@ with tab5:
 # =====================================================
 # ★★★ TAB 6 : 사입 후보 발굴 (신규) ★★★
 # =====================================================
-with tab6:
+if active_tab == "🎯 사입 후보 발굴":
     st.subheader("🎯 사입 후보 발굴 (브랜드 × 시즌/어종 × 제품군)")
     st.caption("타사 브랜드·시즌/어종·제품군을 조합해 네이버쇼핑 상위 제품을 모으고, "
                "우리가 아직 안 파는 잘나가는 제품을 골라냅니다. "
