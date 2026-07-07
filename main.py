@@ -104,40 +104,56 @@ def save_to_sheet(keyword, found_items):
 @st.cache_data(ttl=300)
 def load_all_sheets_at_once(_sh, keywords):
     all_data = {}
+    if not keywords:
+        return all_data
+
+    # 존재하는 워크시트만 추림 (한 번의 호출로 전체 목록 가져옴)
+    existing_titles = {ws.title for ws in _sh.worksheets()}
+    valid_kws = [kw for kw in keywords if kw in existing_titles]
     for kw in keywords:
-        try:
-            ws = _sh.worksheet(kw)
-            all_values = ws.get_all_values()
-            if not all_values:
-                all_data[kw] = []; continue
-            first = all_values[0]
-            has_header = any(c in ["날짜","순위","상품명"] for c in first)
-            if has_header:
-                header = first; data_rows = all_values[1:]
-            else:
-                data_rows = all_values; cc = len(first)
-                if cc >= 8: header = ["날짜","순위","상품명","판매처","가격","링크","썸네일","productType"]
-                elif cc >= 7: header = ["날짜","순위","상품명","판매처","가격","링크","썸네일"]
-                else: header = ["날짜","순위","상품명","판매처","가격","링크"]
-            col_map = {n: i for i, n in enumerate(header)}
-            def gv(row, name, _m=col_map):
-                idx = _m.get(name)
-                if idx is None or idx >= len(row): return ""
-                return row[idx]
-            records = []
-            for row in data_rows:
-                if not row or not any(row): continue
-                rec = {"날짜":gv(row,"날짜"),"순위":gv(row,"순위"),"상품명":gv(row,"상품명"),
-                       "판매처":gv(row,"판매처"),"가격":gv(row,"가격"),"링크":gv(row,"링크"),
-                       "썸네일":gv(row,"썸네일"),"productType":gv(row,"productType")}
-                if rec["날짜"] and str(rec["순위"]).strip() and rec["상품명"]:
-                    records.append(rec)
-            all_data[kw] = records
-            time.sleep(0.1)
-        except gspread.exceptions.WorksheetNotFound:
+        if kw not in existing_titles:
             all_data[kw] = []
-        except Exception:
+
+    if not valid_kws:
+        return all_data
+
+    # ★ 여러 시트를 한 번의 API 호출로 몰아서 읽기
+    try:
+        ranges = [f"'{kw}'!A1:H10000" for kw in valid_kws]
+        batch = _sh.values_batch_get(ranges)
+        value_ranges = batch.get("valueRanges", [])
+    except Exception:
+        value_ranges = []
+
+    for kw, vr in zip(valid_kws, value_ranges):
+        all_values = vr.get("values", [])
+        if not all_values:
             all_data[kw] = []
+            continue
+        first = all_values[0]
+        has_header = any(c in ["날짜", "순위", "상품명"] for c in first)
+        if has_header:
+            header = first; data_rows = all_values[1:]
+        else:
+            data_rows = all_values; cc = len(first)
+            if cc >= 8: header = ["날짜","순위","상품명","판매처","가격","링크","썸네일","productType"]
+            elif cc >= 7: header = ["날짜","순위","상품명","판매처","가격","링크","썸네일"]
+            else: header = ["날짜","순위","상품명","판매처","가격","링크"]
+        col_map = {n: i for i, n in enumerate(header)}
+        def gv(row, name, _m=col_map):
+            idx = _m.get(name)
+            if idx is None or idx >= len(row): return ""
+            return row[idx]
+        records = []
+        for row in data_rows:
+            if not row or not any(row): continue
+            rec = {"날짜":gv(row,"날짜"),"순위":gv(row,"순위"),"상품명":gv(row,"상품명"),
+                   "판매처":gv(row,"판매처"),"가격":gv(row,"가격"),"링크":gv(row,"링크"),
+                   "썸네일":gv(row,"썸네일"),"productType":gv(row,"productType")}
+            if rec["날짜"] and str(rec["순위"]).strip() and rec["상품명"]:
+                records.append(rec)
+        all_data[kw] = records
+
     return all_data
 
 # ---------- [3] 모니터링 목록 ----------
