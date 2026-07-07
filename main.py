@@ -1666,14 +1666,577 @@ if tab4.open:
                         sorted([{"월":m,"수집건수":c} for m,c in month_count.items()],
                                key=lambda x:x["월"]))
                     st.bar_chart(df_month.set_index("월")["수집건수"])
+# =============================================
+# [블록 4/5] tab1 + tab2 + tab3 + tab4 (기존 동일)
+# =============================================
+
+# ---------- TAB 1 : 순위 검색 ----------
+with tab1:
+    keyword = st.text_input("수색할 키워드를 입력하세요 (예: 타이라바 로드)")
+    if "search_results" not in st.session_state: st.session_state["search_results"] = None
+    if "search_keyword" not in st.session_state: st.session_state["search_keyword"] = ""
+
+    if st.button("🚀 400위까지 정밀 수색 시작"):
+        if not keyword:
+            st.warning("키워드를 입력해주세요.")
+        else:
+            with st.spinner("🛰️ 수색 중..."):
+                found_items, price_top10, top100_items, err = collect_rank_data(
+                    keyword, CLIENT_ID, CLIENT_SECRET)
+            if err: st.error(err)
+            if found_items:
+                with st.spinner("📊 구글 시트 기록 중..."):
+                    if save_to_sheet(keyword, found_items):
+                        st.success("✅ 구글 시트 자동 저장 완료!")
+            st.session_state["search_keyword"] = keyword
+            st.session_state["search_results"] = {
+                "found_items":found_items,"price_top10":price_top10,"top100_items":top100_items}
+
+    if st.session_state["search_results"] is not None:
+        sr = st.session_state["search_results"]
+        saved_kw = st.session_state.get("search_keyword", "")
+        found_items = sr.get("found_items", [])
+        top100_items = sr.get("top100_items", [])
+        price_top10 = sr.get("price_top10")
+        if price_top10 is None:
+            if top100_items:
+                price_top10 = [it["가격"] for it in top100_items
+                               if it.get("순위", 999) <= 10 and it.get("가격", 0) > 0]
+            else:
+                price_top10 = sr.get("price_list", [])[:10]
+        avg_price = int(sum(price_top10)/len(price_top10)) if price_top10 else 0
+        our_avg = 0
+        if price_top10:
+            our_prices = [i["가격"] for i in found_items if i["가격"]>0]
+            our_avg = int(sum(our_prices)/len(our_prices)) if our_prices else 0
+            diff_pct = int((our_avg-avg_price)/avg_price*100) if avg_price>0 else 0
+            diff_label = f"TOP10 평균보다 {abs(diff_pct)}% {'💸 비쌈' if diff_pct>0 else '✅ 저렴'}"
+            if found_items:
+                best = min(found_items, key=lambda x:x["순위"])["순위"]
+                st.info(f"**'{saved_kw}'** · 피싱템 **{len(found_items)}개** 노출 · "
+                        f"최고 **{best}위** · {diff_label}")
+            st.subheader("💰 키워드 시장 가격 분석 (TOP 10 기준)")
+            c1,c2,c3,c4 = st.columns(4)
+            c1.metric("TOP10 최저가", f"{min(price_top10):,}원")
+            c2.metric("TOP10 평균가", f"{avg_price:,}원")
+            c3.metric("TOP10 최고가", f"{max(price_top10):,}원")
+            c4.metric("피싱템 평균가", f"{our_avg:,}원" if our_avg else "-")
+            st.divider()
+        if top100_items:
+            st.markdown("### 🏪 시장 경쟁 상품 TOP 10")
+            st.caption("현재 이 키워드의 상위 노출 상품들입니다. 썸네일/상품명을 클릭하면 해당 상품 페이지로 이동합니다.")
+            top10 = top100_items[:10]
+            cols = st.columns(5)
+            for i, item in enumerate(top10):
+                with cols[i % 5]:
+                    img = item.get("썸네일", "")
+                    link = item.get("링크", "")
+                    name = item.get("상품명", "")
+                    price = item.get("가격", 0)
+                    mall = item.get("판매처", "")
+                    rank = item.get("순위", i + 1)
+                    badge = get_catalog_badge(item.get("productType", 0))
+                    if img:
+                        st.markdown(
+                            f'<a href="{link}" target="_blank">'
+                            f'<img src="{img}" style="width:100%;border-radius:8px;"></a>',
+                            unsafe_allow_html=True)
+                    short_name = name if len(name) <= 22 else name[:22] + "…"
+                    st.markdown(f"**{rank}위** · [{short_name}]({link})")
+                    st.markdown(f"💰 **{price:,}원**")
+                    st.caption(f"{mall} {badge}")
+            st.divider()
+        if not found_items:
+            st.error(f"⚠️ 현재 '{TARGET_STORE}' 상품이 400위 내 비노출 중입니다.")
+        else:
+            st.success(f"✅ 총 {len(found_items)}개의 자사 상품 발견!")
+            st.markdown("### 📌 선택 상품 모니터링 바로 등록")
+            with st.form("add_monitor_form"):
+                checked = {}
+                CPR = 3
+                for rs in range(0, len(found_items), CPR):
+                    row = found_items[rs:rs+CPR]; cols = st.columns(CPR)
+                    for col,item in zip(cols,row):
+                        with col:
+                            with st.container(border=True):
+                                if item["썸네일"]: st.image(item["썸네일"], width=150)
+                                st.markdown(f"### 🏆 {item['순위']}위")
+                                if item.get("묶음여부"): st.warning("🔗 가격비교 묶음")
+                                else: st.success("✅ 독립 노출")
+                                st.markdown(f"**[{item['상품명']}]({item['링크']})**")
+                                checked[item['상품명']] = st.checkbox(
+                                    "모니터링 담기",
+                                    key=f"chk_{item['순위']}_{item['상품명'][:10]}")
+                                st.caption(f"🏪 {item['판매처']}")
+                                if item["가격"]>0 and avg_price>0:
+                                    d = int((item["가격"]-avg_price)/avg_price*100)
+                                    ds = f"📈 TOP10보다 {abs(d)}% 비쌈" if d>0 else f"📉 TOP10보다 {abs(d)}% 저렴"
+                                    st.caption(f"💴 {item['가격']:,}원"); st.caption(ds)
+                submit = st.form_submit_button("🚀 선택 상품 모니터링 등록",
+                                               type="primary", use_container_width=True)
+                if submit:
+                    sel = [n for n,c in checked.items() if c]
+                    if not sel: st.warning("선택된 상품이 없습니다.")
+                    else:
+                        cnt = 0
+                        for pn in sel:
+                            ok,_ = add_monitor_keyword(saved_kw, memo=f"등록상품:{pn}")
+                            if ok: cnt += 1
+                        if cnt>0:
+                            st.success(f"✅ {cnt}개 등록 완료!")
+                            load_monitor_keywords.clear(); load_all_sheets_at_once.clear()
+                            time.sleep(1); st.rerun()
+                        else: st.warning("이미 등록되었거나 오류 발생.")
+
+# ---------- TAB 2 : 모니터링 관리 ----------
+with tab2:
+    st.subheader("📋 모니터링 키워드 관리")
+    with st.spinner("목록 불러오는 중..."):
+        sh = get_google_sheet()
+        monitor_records = load_monitor_keywords(_sh=sh)
+    if "detail_item" not in st.session_state: st.session_state["detail_item"] = None
+    selected_for_deletion = []
+
+    if not monitor_records:
+        st.info("등록된 키워드가 없습니다. [순위 검색] 탭에서 등록해보세요!")
+    else:
+        st.caption(f"총 {len(monitor_records)}개 항목 모니터링 중")
+        with st.spinner("📊 순위 데이터 불러오는 중..."):
+            unique_kws = list(set(r["키워드"] for r in monitor_records))
+            all_history = load_all_sheets_at_once(_sh=sh, keywords=unique_kws)
+        CPR = 4
+        for rs in range(0, len(monitor_records), CPR):
+            row_recs = monitor_records[rs:rs+CPR]; cols = st.columns(CPR)
+            for col,rec in zip(cols,row_recs):
+                with col:
+                    kw, memo = rec["키워드"], rec["메모"]
+                    history = all_history.get(kw, [])
+                    thumb=link=""; best_now=None; change_str="➖ 첫 수집"
+                    status="⚪ 미노출"; latest_date="-"; pname="-"; latest_pt=None
+                    if history:
+                        try:
+                            latest_date = max(set(r["날짜"] for r in history))
+                            lat = [r for r in history if r["날짜"]==latest_date]
+                            tgt = lat
+                            if memo.startswith("등록상품:"):
+                                tn = memo.replace("등록상품:","").strip()
+                                f = [r for r in lat if tn in r["상품명"]]
+                                tgt = f if f else []
+                            if tgt:
+                                br = min(tgt, key=lambda x:int(x["순위"]))
+                                best_now = int(br["순위"]); pname = br.get("상품명","-")
+                                thumb = br.get("썸네일",""); link = br.get("링크","")
+                                ptr = br.get("productType","")
+                                latest_pt = int(ptr) if str(ptr).strip().isdigit() else None
+                                ad = sorted(set(r["날짜"] for r in history))
+                                if len(ad)>=2:
+                                    pv = [r for r in history if r["날짜"]==ad[-2]]
+                                    pvt = pv
+                                    if memo.startswith("등록상품:"):
+                                        pf = [r for r in pv if tn in r["상품명"]]
+                                        pvt = pf if pf else []
+                                    if pvt:
+                                        bp = min(int(r["순위"]) for r in pvt)
+                                        ch = bp - best_now
+                                        if ch>0: change_str=f"🔺 {ch}위 상승"
+                                        elif ch<0: change_str=f"🔻 {abs(ch)}위 하락"
+                                        else: change_str="➡️ 변동 없음"
+                                if best_now<=10: status="🟢 TOP 10"
+                                elif best_now<=50: status="🟢 TOP 50"
+                                elif best_now<=100: status="🟡 TOP 100"
+                                elif best_now<=200: status="🟠 TOP 200"
+                                else: status="🔴 200위 밖"
+                            else:
+                                pname = memo.replace("등록상품:","").strip() if memo.startswith("등록상품:") else "-"
+                        except Exception: pass
+                    with st.container(border=True):
+                        if thumb: st.image(thumb, width=100)
+                        if link: st.markdown(f"**[🔑 {kw}]({link})**")
+                        else: st.markdown(f"**🔑 {kw}**")
+                        st.caption(f"📦 {pname[:20]}..." if len(pname)>20 else f"📦 {pname}")
+                        if best_now:
+                            st.markdown(f"🏆 **{best_now}위** · {status}")
+                            if latest_pt==1: st.caption("🔗 가격비교 묶음")
+                            elif latest_pt in [2,3]: st.caption("✅ 독립 노출")
+                            else: st.caption("ℹ️ 노출형태 미확인")
+                        else:
+                            st.markdown("🏆 **순위 밖 (미수집)**")
+                        st.caption(change_str); st.caption(f"🕐 {latest_date}")
+                        if st.button("🔍 상세분석", key=f"detail_{kw}_{memo}", use_container_width=True):
+                            cur = st.session_state.get("detail_item")
+                            nd = f"{kw}|||{memo}"
+                            st.session_state["detail_item"] = None if cur==nd else nd
+                            st.rerun()
+                        if st.checkbox("🗑️ 삭제 선택", key=f"del_{kw}_{memo}"):
+                            selected_for_deletion.append(f"{kw}|||{memo}")
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("🗑️ 선택 항목 일괄 삭제", type="secondary"):
+            if not selected_for_deletion: st.warning("삭제할 항목을 선택하세요.")
+            else:
+                with st.spinner("삭제 중..."):
+                    if delete_multiple_monitor_keywords(selected_for_deletion):
+                        st.success("✅ 삭제 완료!")
+                        load_monitor_keywords.clear(); load_all_sheets_at_once.clear()
+                        time.sleep(1); st.rerun()
+        if st.session_state.get("detail_item"):
+            dv = st.session_state["detail_item"]
+            skw, smemo = dv.split("|||") if "|||" in dv else (dv, "")
+            tpn = smemo.replace("등록상품:","").strip() if smemo.startswith("등록상품:") else None
+            st.divider()
+            with st.container(border=True):
+                if st.button("✖ 닫기", key="close_detail"):
+                    st.session_state["detail_item"] = None; st.rerun()
+                render_detail_panel(skw, all_history.get(skw,[]), sh, tpn)
+        st.divider()
+        st.markdown("#### 🚀 등록 키워드 전체 일괄 수색")
+        if st.button("🛰️ 전체 키워드 일괄 수색 시작", type="primary", use_container_width=True):
+            total = len(unique_kws); prog = st.progress(0, text="준비 중...")
+            summary = []
+            for idx,kw in enumerate(unique_kws):
+                prog.progress(idx/total, text=f"🔍 [{idx+1}/{total}] '{kw}'...")
+                found, pt10, top100, err = collect_rank_data(kw, CLIENT_ID, CLIENT_SECRET)
+                if err: summary.append({"키워드":kw,"결과":f"❌ {err}"}); continue
+                if found:
+                    save_to_sheet(kw, found)
+                    best = min(found, key=lambda x:x["순위"])["순위"]
+                    cc = sum(1 for i in found if i.get("묶음여부"))
+                    note = f" (묶음 {cc}개)" if cc>0 else ""
+                    summary.append({"키워드":kw,"결과":f"✅ {len(found)}개 (최고 {best}위){note}"})
+                else:
+                    summary.append({"키워드":kw,"결과":"⚠️ 400위 내 미노출"})
+                time.sleep(0.3)
+            prog.progress(1.0, text="✅ 완료!")
+            st.success("🎉 일괄 수색 완료!")
+            st.dataframe(pd.DataFrame(summary), use_container_width=True, hide_index=True)
+            load_all_sheets_at_once.clear(); time.sleep(1); st.rerun()
+
+# ---------- TAB 3 : 키워드 분석 ----------
+with tab3:
+    st.subheader("📊 키워드 분석")
+    col_kw, col_btn = st.columns([4,1])
+    with col_kw:
+        ak = st.text_input("분석할 키워드", placeholder="예: 타이라바 로드",
+                           label_visibility="collapsed")
+    with col_btn:
+        abtn = st.button("🔍 분석 시작", type="primary", use_container_width=True)
+    if abtn:
+        if not ak: st.warning("키워드를 입력하세요.")
+        else:
+            with st.spinner("📡 데이터 불러오는 중..."):
+                results = get_keyword_stats([ak])
+            if not results:
+                st.error(f"'{ak}' 데이터를 찾을 수 없습니다.")
+            else:
+                mr = next((r for r in results if r["키워드"]==ak), results[0])
+                st.session_state["analysis_keyword"]=ak
+                st.session_state["analysis_results"]=results
+                st.session_state["main_result"]=mr
+    if "main_result" in st.session_state:
+        mr = st.session_state["main_result"]; results = st.session_state["analysis_results"]
+        ak = st.session_state["analysis_keyword"]
+        st.divider(); st.markdown(f"##### 📌 '{ak}' 분석 결과")
+        c1,c2,c3,c4,c5 = st.columns(5)
+        c1.metric("💻 PC 검색량", f"{mr['PC 검색량']:,}")
+        c2.metric("📱 모바일 검색량", f"{mr['모바일 검색량']:,}")
+        c3.metric("🔢 총 검색량", f"{mr['총 검색량']:,}")
+        c4.metric("⚔️ 경쟁강도", mr["경쟁강도"])
+        c5.metric("🖱️ PC 클릭수", f"{mr['PC 클릭률']:,}")
+        st.divider(); st.markdown("#### 🔗 연관 키워드 분석")
+        if results:
+            dfr = pd.DataFrame(results).sort_values("총 검색량", ascending=False).reset_index(drop=True)
+            dfr.index = dfr.index + 1
+            disp = dfr[["키워드","PC 검색량","모바일 검색량","총 검색량","경쟁강도"]]
+            st.dataframe(disp, use_container_width=True)
+            csv = disp.to_csv(index=False).encode("utf-8-sig")
+            st.download_button("📥 CSV 다운로드", csv,
+                file_name=f"{ak}_키워드분석_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv", use_container_width=True)
+
+# ---------- TAB 4 : 광고 진단(A) & 시즌(B) ----------
+with tab4:
+    st.subheader("📢 CPC 광고 진단 & 시즌 전략")
+    # ★ 중첩 탭(st.tabs) 대신 radio로 교체 → 탭 렌더링 글리치 방지
+    tab4_view = st.radio(
+        "보기 선택",
+        ["🩺 쇼핑광고 진단", "📅 시즌·추세 데이터"],
+        horizontal=True, key="tab4_view"
+    )
+
+    # ============================================================
+    # (A) 쇼핑광고 진단
+    # ============================================================
+    if tab4_view == "🩺 쇼핑광고 진단":
+        st.caption("쇼핑광고 소재 성과를 불러와 자동 진단합니다. 빠른 확인은 '선택 진단', "
+                   "정기 점검은 '전체 진단'을 사용하세요.")
+        diag_mode = st.radio("진단 방식", ["⚡ 선택 진단 (빠름)", "🩺 전체 진단 (전수·느림)"],
+                             horizontal=True, key="diag_mode")
+        diag_days = st.selectbox("진단 기간", [7, 14, 30], index=0,
+                                 format_func=lambda x: f"최근 {x}일", key="diag_days")
+        with st.spinner("📡 캠페인 목록 불러오는 중..."):
+            campaigns = ad_get_campaigns()
+        shopping_camps = [c for c in campaigns
+                          if "SHOPPING" in str(c.get("campaignTp",""))]
+
+        if not shopping_camps:
+            st.error("쇼핑광고 캠페인을 찾지 못했습니다. 광고 API 권한/키를 확인하세요.")
+        else:
+            if diag_mode.startswith("⚡"):
+                camp_map = {c.get("name", c.get("nccCampaignId")): c.get("nccCampaignId")
+                            for c in shopping_camps}
+                sel_camp_names = st.multiselect(
+                    "① 캠페인 선택 (여러 개 선택 가능)",
+                    options=list(camp_map.keys()),
+                    help="선택한 캠페인들의 모든 광고그룹을 진단합니다.")
+                target_groups = []
+                sel_label = ""
+                if len(sel_camp_names) == 1:
+                    only_id = camp_map[sel_camp_names[0]]
+                    adgroups = ad_get_adgroups(only_id)
+                    if adgroups:
+                        ag_map = {a.get("name", a.get("nccAdgroupId")): a.get("nccAdgroupId")
+                                  for a in adgroups}
+                        ag_options = ["📦 이 캠페인 전체 그룹"] + list(ag_map.keys())
+                        sel_ag_name = st.selectbox("② 광고그룹 선택", ag_options)
+                        if sel_ag_name.startswith("📦"):
+                            target_groups = [(sel_camp_names[0], adgroups)]
+                        else:
+                            target_groups = [(sel_camp_names[0],
+                                [a for a in adgroups
+                                 if a.get("nccAdgroupId") == ag_map[sel_ag_name]])]
+                    sel_label = sel_camp_names[0]
+                elif len(sel_camp_names) >= 2:
+                    st.info(f"{len(sel_camp_names)}개 캠페인의 전체 광고그룹을 진단합니다.")
+                    for cn in sel_camp_names:
+                        ags = ad_get_adgroups(camp_map[cn])
+                        target_groups.append((cn, ags))
+                    sel_label = f"{len(sel_camp_names)}개 캠페인"
+                if st.button("⚡ 선택 진단 시작", type="primary"):
+                    if not sel_camp_names:
+                        st.warning("캠페인을 1개 이상 선택하세요.")
+                    else:
+                        rows = []
+                        prog = st.progress(0, text="진단 준비 중...")
+                        for ci, (cn, ags) in enumerate(target_groups):
+                            prog.progress(ci/max(len(target_groups),1),
+                                          text=f"🔍 [{ci+1}/{len(target_groups)}] {cn}")
+                            rows += run_ad_diagnosis(ags, cn, diag_days)
+                        prog.progress(1.0, text="✅ 진단 완료!")
+                        st.session_state["ad_diag_rows"] = rows
+            else:
+                skip_off = st.checkbox("꺼진(OFF) 캠페인 제외", value=True)
+                st.info(f"쇼핑광고 캠페인 {len(shopping_camps)}개를 진단합니다. "
+                        "데이터가 많으면 1~2분 소요될 수 있습니다.")
+                if st.button("🩺 전체 진단 시작", type="primary"):
+                    rows = []
+                    target_camps = [c for c in shopping_camps
+                                    if (not skip_off) or c.get("userLock") != True]
+                    prog = st.progress(0, text="진단 준비 중...")
+                    for ci, camp in enumerate(target_camps):
+                        cid = camp.get("nccCampaignId"); cname = camp.get("name","")
+                        prog.progress(ci/max(len(target_camps),1),
+                                      text=f"🔍 [{ci+1}/{len(target_camps)}] {cname}")
+                        adgroups = ad_get_adgroups(cid)
+                        rows += run_ad_diagnosis(adgroups, cname, diag_days)
+                    prog.progress(1.0, text="✅ 진단 완료!")
+                    st.session_state["ad_diag_rows"] = rows
+
+        if st.session_state.get("ad_diag_rows"):
+            rows = st.session_state["ad_diag_rows"]
+            if not rows:
+                st.warning("진단할 소재가 없습니다.")
+            else:
+                save_ad_diagnosis(rows)
+                prev = load_yesterday_ad(rows)
+                total_imp = sum(r["노출수"] for r in rows)
+                total_cost = sum(r["광고비"] for r in rows)
+                problem = [r for r in rows if r["상태"] in ["🔴","🟠"]]
+                m1,m2,m3,m4 = st.columns(4)
+                m1.metric("진단 소재 수", f"{len(rows)}개")
+                m2.metric("총 노출수", f"{total_imp:,}")
+                m3.metric("총 광고비", f"{total_cost:,}원")
+                m4.metric("⚠️ 점검 필요", f"{len(problem)}개")
+                st.divider()
+                st.markdown("### 📌 오늘 챙길 광고 TOP 5")
+                def _priority(r):
+                    if r["상태"] == "🔴": return 3
+                    if r["상태"] == "🟠": return 2
+                    if r["상태"] == "🟡": return 1
+                    return 0
+                todo = [r for r in rows if _priority(r) > 0]
+                todo.sort(key=lambda r: _priority(r), reverse=True)
+                if not todo:
+                    st.success("👍 오늘 급하게 손볼 광고가 없습니다. 모두 양호합니다!")
+                else:
+                    for i, r in enumerate(todo[:5], start=1):
+                        adv_parts = r["_advice"].split(" / ")
+                        key_adv = next((a for a in adv_parts if a.startswith("💰")),
+                                       adv_parts[0] if adv_parts else "")
+                        st.markdown(f"**{i}. {r['상태']} {r['상품명']}** — {r['진단']}")
+                        st.caption(f"　{key_adv}")
+                st.divider()
+                st.markdown("### 📉 어제보다 나빠진 광고")
+                if not prev:
+                    st.info("비교할 어제 기록이 아직 없습니다. 내일 다시 진단하면 변화가 표시됩니다.")
+                else:
+                    changes = []
+                    for r in rows:
+                        p = prev.get(r["상품명"])
+                        if not p:
+                            continue
+                        imp_now = r["노출수"]; imp_old = p["노출수"]
+                        rnk_now = r["평균순위"]; rnk_old = p["평균순위"]
+                        if imp_old > 0 and imp_now < imp_old * 0.7:
+                            drop = int((1 - imp_now/imp_old) * 100)
+                            changes.append(f"📉 **{r['상품명']}** · 노출 {drop}% 감소 "
+                                           f"({imp_old:,} → {imp_now:,})")
+                        elif rnk_old > 0 and rnk_now > 0 and rnk_now - rnk_old >= 3:
+                            changes.append(f"📉 **{r['상품명']}** · 순위 하락 "
+                                           f"({rnk_old:.1f}위 → {rnk_now:.1f}위)")
+                    if not changes:
+                        st.success("👍 어제보다 크게 나빠진 광고가 없습니다.")
+                    else:
+                        for c in changes:
+                            st.warning(c)
+                st.divider()
+                if problem:
+                    st.markdown("#### ⚠️ 우선 점검 필요한 광고")
+                    for r in problem:
+                        with st.container(border=True):
+                            st.markdown(f"{r['상태']} **{r['상품명']}** · {r['진단']}")
+                            st.caption(f"캠페인: {r['캠페인']} / 그룹: {r['광고그룹']} · "
+                                       f"입찰가 {r['입찰가']:,}원 · 품질 {r['품질지수']}/10 · "
+                                       f"노출 {r['노출수']:,} · 클릭 {r['클릭수']} · "
+                                       f"CTR {r['CTR(%)']}% · 평균순위 {r['평균순위']}")
+                            st.info(f"💡 {r['_advice']}")
+                    st.divider()
+                st.markdown("#### 📋 전체 광고 성과 표")
+                df = pd.DataFrame(rows)[["상태","캠페인","광고그룹","상품명","ON/OFF",
+                                         "입찰가","품질지수","노출수","클릭수","CTR(%)",
+                                         "평균순위","광고비","진단"]]
+                st.dataframe(df, use_container_width=True, hide_index=True)
+                csv = df.to_csv(index=False).encode("utf-8-sig")
+                st.download_button("📥 진단 결과 CSV 다운로드", csv,
+                    file_name=f"광고진단_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv")
+                st.caption("※ 품질지수는 쇼핑광고 소재 기준(1~10)입니다.")
+
+    # ============================================================
+    # (B) 시즌·추세 데이터
+    # ============================================================
+    else:
+        st.caption("누적된 순위 기록으로 시즌 진입 시점과 추세를 파악합니다.")
+        with st.spinner("📊 데이터 불러오는 중..."):
+            sh_b = get_google_sheet()
+            mon_b = load_monitor_keywords(_sh=sh_b)
+            kws_b = list(set(r["키워드"] for r in mon_b)) if mon_b else []
+            hist_b = load_all_sheets_at_once(_sh=sh_b, keywords=kws_b) if kws_b else {}
+        if not kws_b:
+            st.info("모니터링 키워드가 없습니다. 먼저 키워드를 등록하고 데이터를 쌓으세요.")
+        else:
+            def _date_best_map(recs):
+                dbest = {}
+                for r in recs:
+                    d = r["날짜"][:10]
+                    try: rk = int(r["순위"])
+                    except Exception: continue
+                    if d not in dbest or rk < dbest[d]:
+                        dbest[d] = rk
+                return dbest
+            this_month = datetime.now().strftime("%m")
+            last_year = str(datetime.now().year - 1)
+            st.markdown(f"### 📅 이번 달({int(this_month)}월) 챙길 키워드")
+            cal_rows = []
+            for kw in kws_b:
+                recs = hist_b.get(kw, [])
+                dbest = _date_best_map(recs)
+                ly_same_month = {d: v for d, v in dbest.items()
+                                 if d[:4] == last_year and d[5:7] == this_month}
+                if ly_same_month:
+                    best_ly = min(ly_same_month.values())
+                    cal_rows.append(f"🎣 **{kw}** — 작년 {int(this_month)}월 최고 {best_ly}위 "
+                                    f"기록. 지금 광고·재고를 준비하세요!")
+            if cal_rows:
+                for c in cal_rows:
+                    st.success(c)
+            else:
+                st.info("아직 '작년 이번 달' 데이터가 없습니다. 1년 이상 쌓이면 "
+                        "이번 달에 미리 챙길 키워드를 자동으로 알려드립니다.")
+            st.divider()
+            st.markdown("### 📊 키워드별 최근 추세 요약")
+            for kw in kws_b:
+                recs = hist_b.get(kw, [])
+                dbest = _date_best_map(recs)
+                if len(dbest) < 2:
+                    st.caption(f"• {kw} — 데이터 부족 (수집 더 필요)")
+                    continue
+                sorted_d = sorted(dbest.keys())
+                recent = sorted_d[-1]; before = sorted_d[max(0, len(sorted_d)-4)]
+                gap = dbest[before] - dbest[recent]
+                if gap >= 3:
+                    st.markdown(f"📈 **{kw}** — 상승 중 ({dbest[before]}위 → {dbest[recent]}위)")
+                elif gap <= -3:
+                    st.markdown(f"📉 **{kw}** — 하락 중 ({dbest[before]}위 → {dbest[recent]}위)")
+                else:
+                    st.markdown(f"➡️ **{kw}** — 정체 (현재 {dbest[recent]}위)")
+            st.divider()
+            st.markdown("### 🔍 키워드별 상세 추세")
+            sel_kw = st.selectbox("추세를 볼 키워드 선택", kws_b)
+            recs = hist_b.get(sel_kw, [])
+            if not recs:
+                st.warning("아직 수집된 데이터가 없습니다. 며칠간 수색을 진행해 데이터를 쌓으세요.")
+            else:
+                dbest = _date_best_map(recs)
+                if dbest:
+                    df_trend = pd.DataFrame(
+                        sorted([{"날짜":d,"최고순위":v} for d,v in dbest.items()],
+                               key=lambda x:x["날짜"]))
+                    st.markdown(f"#### 📈 '{sel_kw}' 순위 추세 (낮을수록 좋음)")
+                    st.line_chart(df_trend.set_index("날짜")["최고순위"])
+                    if len(df_trend) >= 2:
+                        gap = df_trend.iloc[0]["최고순위"] - df_trend.iloc[-1]["최고순위"]
+                        if gap > 0: st.success(f"📈 기록 시작 이후 순위가 {gap}위 상승했습니다.")
+                        elif gap < 0: st.warning(f"📉 기록 시작 이후 순위가 {abs(gap)}위 하락했습니다.")
+                        else: st.info("➡️ 순위 변동이 거의 없습니다.")
+                    st.markdown("##### 🗓️ 작년 같은 달과 비교")
+                    cur_m = datetime.now().strftime("%m")
+                    ly = str(datetime.now().year - 1)
+                    ly_data = {d: v for d, v in dbest.items()
+                               if d[:4] == ly and d[5:7] == cur_m}
+                    ty_data = {d: v for d, v in dbest.items()
+                               if d[:4] == str(datetime.now().year) and d[5:7] == cur_m}
+                    if ly_data and ty_data:
+                        ly_best = min(ly_data.values()); ty_best = min(ty_data.values())
+                        diff = ly_best - ty_best
+                        if diff > 0:
+                            st.success(f"작년 {int(cur_m)}월 최고 {ly_best}위 → 올해 {ty_best}위 "
+                                       f"({diff}위 더 좋음 📈)")
+                        elif diff < 0:
+                            st.warning(f"작년 {int(cur_m)}월 최고 {ly_best}위 → 올해 {ty_best}위 "
+                                       f"({abs(diff)}위 더 나쁨 📉). 광고 강화를 검토하세요.")
+                        else:
+                            st.info(f"작년과 올해 {int(cur_m)}월 순위가 비슷합니다 (최고 {ty_best}위).")
+                    else:
+                        st.info("작년 같은 달 데이터가 없어 비교할 수 없습니다. "
+                                "데이터가 1년 이상 쌓이면 자동으로 비교됩니다.")
+                    st.dataframe(df_trend, use_container_width=True, hide_index=True)
+                st.divider()
+                st.markdown("#### 📅 월별 수집 기록")
+                month_count = {}
+                for r in recs:
+                    m = r["날짜"][:7]
+                    month_count[m] = month_count.get(m, 0) + 1
+                if month_count:
+                    df_month = pd.DataFrame(
+                        sorted([{"월":m,"수집건수":c} for m,c in month_count.items()],
+                               key=lambda x:x["월"]))
+                    st.bar_chart(df_month.set_index("월")["수집건수"])
 
 # =============================================
 # [블록 5/5] tab5(기존) + ★tab6 사입 후보 발굴(신규)★
 # =============================================
 
 # ---------- TAB 5 : 유입·상품 분석 (엑셀 업로드) ----------
-if tab5.open:
-    with tab5:
+with tab5:
     st.subheader("📂 유입·상품 분석")
     st.caption("스마트스토어에서 받은 엑셀(.xlsx)을 올리면 자동으로 분석합니다. "
                "두 파일은 따로 올려도 됩니다.")
@@ -1917,8 +2480,7 @@ if tab5.open:
 # =====================================================
 # ★★★ TAB 6 : 사입 후보 발굴 (신규) ★★★
 # =====================================================
-if tab6.open:
-    with tab6:
+with tab6:
     st.subheader("🎯 사입 후보 발굴 (브랜드 × 시즌/어종 × 제품군)")
     st.caption("타사 브랜드·시즌/어종·제품군을 조합해 네이버쇼핑 상위 제품을 모으고, "
                "우리가 아직 안 파는 잘나가는 제품을 골라냅니다. "
