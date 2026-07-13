@@ -1109,7 +1109,7 @@ st.link_button("📊 구글 시트에서 전체 기록 보기",
 st.markdown("<br>", unsafe_allow_html=True)
 
 TAB_LABELS = ["🔍 순위 검색", "📋 모니터링 관리", "📊 키워드 분석",
-              "📢 광고 진단 & 시즌", "🛒 동시구매 분석", "🎯 사입 후보 발굴"]
+              "📢 광고 진단 & 시즌", "🛒 낙수효과 분석", "🎯 사입 후보 발굴"]
 active_tab = st.radio("메뉴", TAB_LABELS, horizontal=True,
                       label_visibility="collapsed", key="main_menu")
 
