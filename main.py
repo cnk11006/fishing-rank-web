@@ -1689,7 +1689,7 @@ if active_tab == "📢 광고 진단 & 시즌":
 
 # ---------- TAB 5 : 낙수효과 분석 ----------
 if active_tab == "🛒 교차구매 분석":
-    st.subheader("🛒 낙수효과 분석")
+    st.subheader("🛒 교차구매 분석")
 
     st.markdown("## 🛒 낙수효과 분석")
     st.caption("주문 엑셀을 올리고, 기준이 될 타사 상품명(또는 상품번호)을 입력한 뒤 "
