@@ -1109,7 +1109,7 @@ st.link_button("📊 구글 시트에서 전체 기록 보기",
 st.markdown("<br>", unsafe_allow_html=True)
 
 TAB_LABELS = ["🔍 순위 검색", "📋 모니터링 관리", "📊 키워드 분석",
-              "📢 광고 진단 & 시즌", "🛒 낙수효과 분석", "🎯 사입 후보 발굴"]
+              "📢 광고 진단 & 시즌", "🛒 교차구매 분석", "🎯 사입 후보 발굴"]
 active_tab = st.radio("메뉴", TAB_LABELS, horizontal=True,
                       label_visibility="collapsed", key="main_menu")
 
@@ -1688,10 +1688,10 @@ if active_tab == "📢 광고 진단 & 시즌":
 # =============================================
 
 # ---------- TAB 5 : 낙수효과 분석 ----------
-if active_tab == "🛒 낙수효과 분석":
-    st.subheader("🛒 교차구매 분석")
+if active_tab == "🛒 교차구매 분석":
+    st.subheader("🛒 낙수효과 분석")
 
-    st.markdown("## 🛒 교차구매 분석")
+    st.markdown("## 🛒 낙수효과 분석")
     st.caption("주문 엑셀을 올리고, 기준이 될 타사 상품명(또는 상품번호)을 입력한 뒤 "
                "'동시구매 조회'를 누르면 그 상품과 '한 주문에 함께 담긴' 상품들을 보여줍니다.")
     with st.expander("주문 엑셀은 어디서 받나요?"):
