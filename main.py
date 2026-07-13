@@ -1109,7 +1109,7 @@ st.link_button("📊 구글 시트에서 전체 기록 보기",
 st.markdown("<br>", unsafe_allow_html=True)
 
 TAB_LABELS = ["🔍 순위 검색", "📋 모니터링 관리", "📊 키워드 분석",
-              "📢 광고 진단 & 시즌", "📂 유입·상품 분석", "🎯 사입 후보 발굴"]
+              "📢 광고 진단 & 시즌", "🛒 동시구매 분석", "🎯 사입 후보 발굴"]
 active_tab = st.radio("메뉴", TAB_LABELS, horizontal=True,
                       label_visibility="collapsed", key="main_menu")
 
@@ -1684,161 +1684,13 @@ if active_tab == "📢 광고 진단 & 시즌":
                     st.bar_chart(df_month.set_index("월")["수집건수"])
 
 # =============================================
-# [블록 5/5] tab5(기존) + ★tab6 사입 후보 발굴(신규)★
+# [블록 5/5] tab5(동시구매 분석) + ★tab6 사입 후보 발굴★
 # =============================================
 
-# ---------- TAB 5 : 유입·상품 분석 (엑셀 업로드) ----------
-if active_tab == "📂 유입·상품 분석":
-    st.subheader("📂 유입·상품 분석")
-    st.caption("스마트스토어에서 받은 엑셀(.xlsx)을 올리면 자동으로 분석합니다. "
-               "두 파일은 따로 올려도 됩니다.")
-    with st.expander("📥 각 파일은 어디서 받나요? (다운로드 경로)"):
-        st.markdown("""
-**1. 유입경로 파일 (전체채널)**
-스마트스토어센터 → 데이터분석 → 마케팅분석(전체채널) → 조회기간 설정(월별) → 파일 다운로드
+# ---------- TAB 5 : 동시구매 분석 ----------
+if active_tab == "🛒 동시구매 분석":
+    st.subheader("🛒 동시구매 분석")
 
-**2. 상품별 파일**
-스마트스토어센터 → 데이터분석 → 쇼핑행동분석(상품별) → 조회기간 설정(월별) → 파일 다운로드
-
-**3. 검색채널 파일 (키워드)**
-스마트스토어센터 → 데이터분석 → 마케팅분석 → 검색채널 → 조회기간 설정(월별) → 파일 다운로드
-        """)
-    col_up1, col_up2, col_up3 = st.columns(3)
-    with col_up1:
-        st.markdown("##### 🚪 유입경로 파일")
-        channel_file = st.file_uploader("전체채널 엑셀 올리기", type=["xlsx"],
-                                        key="channel_uploader")
-    with col_up2:
-        st.markdown("##### 📦 상품별 파일")
-        product_file = st.file_uploader("상품별 엑셀 올리기", type=["xlsx"],
-                                        key="product_uploader")
-    with col_up3:
-        st.markdown("##### 🔎 검색채널 파일")
-        search_file = st.file_uploader("검색채널 엑셀 올리기", type=["xlsx"],
-                                       key="search_uploader")
-    st.divider()
-
-    if channel_file is not None:
-        st.markdown("## 🚪 유입경로 분석")
-        try:
-            ch = analyze_channel_file(channel_file)
-            total_visit = int(ch["유입수"].sum())
-            total_pay = int(ch["결제금액"].sum())
-            c1, c2 = st.columns(2)
-            c1.metric("총 유입수", f"{total_visit:,}")
-            c2.metric("총 결제금액", f"{total_pay:,}원")
-            st.markdown("#### 🔝 유입 많은 경로 TOP 10")
-            top_visit = ch.sort_values("유입수", ascending=False).head(10)
-            st.dataframe(top_visit[["채널명","채널속성","유입수","결제수","결제율(%)"]],
-                         use_container_width=True, hide_index=True)
-            st.markdown("#### 💰 결제금액 많은 경로 TOP 10")
-            top_pay = ch.sort_values("결제금액", ascending=False).head(10)
-            st.dataframe(top_pay[["채널명","채널속성","결제금액","결제수","결제율(%)"]],
-                         use_container_width=True, hide_index=True)
-            st.markdown("#### 💎 숨은 보석 / ⚠️ 점검 경로")
-            meaningful = ch[ch["유입수"] >= 100]
-            gems = meaningful.sort_values("결제율(%)", ascending=False).head(5)
-            traps = meaningful[meaningful["유입수"] >= 500].sort_values("결제율(%)").head(5)
-            cg, ct = st.columns(2)
-            with cg:
-                st.markdown("**💎 결제율 높은 경로 (키울 만함)**")
-                for _, r in gems.iterrows():
-                    st.success(f"{r['채널명']} · 결제율 {r['결제율(%)']}% (유입 {int(r['유입수']):,})")
-            with ct:
-                st.markdown("**⚠️ 유입 많은데 결제율 낮은 경로 (점검)**")
-                for _, r in traps.iterrows():
-                    st.warning(f"{r['채널명']} · 결제율 {r['결제율(%)']}% (유입 {int(r['유입수']):,})")
-        except Exception as e:
-            st.error(f"유입경로 파일을 읽는 중 오류: {e}")
-        st.divider()
-
-    if product_file is not None:
-        st.markdown("## 📦 상품별 분석")
-        try:
-            pr = analyze_product_file(product_file)
-            c1, c2, c3 = st.columns(3)
-            c1.metric("분석 상품 수", f"{len(pr)}개")
-            c2.metric("총 결제금액", f"{int(pr['결제금액'].sum()):,}원")
-            c3.metric("총 조회수", f"{int(pr['조회수'].sum()):,}")
-            st.markdown("#### 🗂️ 상품 4분류")
-            cnt = pr["분류"].value_counts()
-            cc1, cc2, cc3, cc4 = st.columns(4)
-            cc1.metric("🟢 효자상품", f"{cnt.get('🟢 효자상품',0)}개")
-            cc2.metric("🔴 개선필요", f"{cnt.get('🔴 개선필요',0)}개")
-            cc3.metric("🟡 숨은보석", f"{cnt.get('🟡 숨은보석',0)}개")
-            cc4.metric("⚪ 정리검토", f"{cnt.get('⚪ 정리검토',0)}개")
-            st.markdown("#### ⚠️ 이번 달 상세페이지 고칠 TOP 10")
-            st.caption("많이 보는데 잘 안 사는 상품입니다. 상세페이지·가격·후기를 점검하세요.")
-            fix = pr[pr["분류"] == "🔴 개선필요"].sort_values("조회수", ascending=False).head(10)
-            if fix.empty:
-                st.info("개선필요로 분류된 상품이 없습니다.")
-            else:
-                st.dataframe(fix[["상품명","조회수","결제수량","결제금액","결제율"]],
-                             use_container_width=True, hide_index=True)
-            st.markdown("#### 🟢 효자상품 TOP 10 (조회·판매 모두 좋음)")
-            best = pr[pr["분류"] == "🟢 효자상품"].sort_values("결제금액", ascending=False).head(10)
-            st.dataframe(best[["상품명","조회수","결제수량","결제금액","결제율"]],
-                         use_container_width=True, hide_index=True)
-            st.markdown("#### 🎯 우리 브랜드(피싱템) 상품만 보기")
-            ours = pr[pr["상품명"].astype(str).str.contains(TARGET_STORE, na=False)]
-            if ours.empty:
-                st.info("상품명에 '피싱템'이 포함된 상품이 없습니다.")
-            else:
-                st.dataframe(
-                    ours[["상품명","분류","조회수","결제수량","결제금액","결제율"]]
-                        .sort_values("조회수", ascending=False),
-                    use_container_width=True, hide_index=True)
-            st.markdown("#### 📋 전체 상품 분석 표")
-            st.dataframe(pr.sort_values("조회수", ascending=False),
-                         use_container_width=True, hide_index=True)
-            csv = pr.to_csv(index=False).encode("utf-8-sig")
-            st.download_button("📥 상품분석 결과 CSV 다운로드", csv,
-                file_name=f"상품분석_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv")
-        except Exception as e:
-            st.error(f"상품별 파일을 읽는 중 오류: {e}")
-
-    if search_file is not None:
-        st.markdown("## 🔎 검색채널(키워드) 분석")
-        try:
-            sr, raw_cols = analyze_search_file(search_file)
-            if sr.empty:
-                st.warning(f"검색어 데이터를 찾지 못했습니다. 열 이름: {raw_cols}")
-            else:
-                tv = int(sr["유입수"].sum()); tp = int(sr["결제금액"].sum())
-                c1, c2 = st.columns(2)
-                c1.metric("총 유입수", f"{tv:,}")
-                c2.metric("총 결제금액", f"{tp:,}원")
-                st.markdown("#### 🔝 유입 많은 키워드 TOP 15")
-                top_v = sr.sort_values("유입수", ascending=False).head(15)
-                st.dataframe(top_v[["검색어","유입수","결제수","결제금액","결제율(%)"]],
-                             use_container_width=True, hide_index=True)
-                st.markdown("#### 💰 매출 많은 키워드 TOP 15")
-                top_p = sr.sort_values("결제금액", ascending=False).head(15)
-                st.dataframe(top_p[["검색어","유입수","결제수","결제금액","결제율(%)"]],
-                             use_container_width=True, hide_index=True)
-                st.markdown("#### 💎 결제율 높은 알짜 키워드 (유입 30 이상)")
-                gems = sr[sr["유입수"] >= 30].sort_values("결제율(%)", ascending=False).head(10)
-                st.dataframe(gems[["검색어","유입수","결제수","결제율(%)"]],
-                             use_container_width=True, hide_index=True)
-                st.markdown("#### 🎯 우리 브랜드(피싱템) 검색 키워드")
-                ours_kw = sr[sr["검색어"].str.contains(TARGET_STORE, na=False)]
-                if ours_kw.empty:
-                    st.info("'피싱템'이 포함된 검색어가 없습니다.")
-                else:
-                    st.dataframe(
-                        ours_kw[["검색어","유입수","결제수","결제금액","결제율(%)"]]
-                            .sort_values("유입수", ascending=False),
-                        use_container_width=True, hide_index=True)
-                csv = sr.to_csv(index=False).encode("utf-8-sig")
-                st.download_button("📥 검색키워드 분석 CSV 다운로드", csv,
-                    file_name=f"검색키워드분석_{datetime.now().strftime('%Y%m%d')}.csv",
-                    mime="text/csv")
-        except Exception as e:
-            st.error(f"검색채널 파일을 읽는 중 오류: {e}")
-        st.divider()
-
-    st.divider()
     st.markdown("## 🛒 동시구매 분석 (장바구니 교차구매)")
     st.caption("주문 엑셀을 올리고, 기준이 될 타사 상품명(또는 상품번호)을 입력한 뒤 "
                "'동시구매 조회'를 누르면 그 상품과 '한 주문에 함께 담긴' 상품들을 보여줍니다.")
@@ -1924,9 +1776,6 @@ if active_tab == "📂 유입·상품 분석":
                             mime="text/csv")
             except Exception as e:
                 st.error(f"분석 중 오류: {e}")
-
-    if channel_file is None and product_file is None and search_file is None:
-        st.info("위에서 엑셀 파일을 올리면 분석이 시작됩니다.")
 
 
 # =====================================================
