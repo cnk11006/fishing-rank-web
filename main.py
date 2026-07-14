@@ -3879,10 +3879,15 @@ elif current_menu == "🎯 사입 후보 발굴":
                             "product_master": product_master_dataframe,
                         }
 
-                        store_coverage = call_with_supported_arguments(
+                        coverage_result = call_with_supported_arguments(
                             build_store_coverage,
                             coverage_argument_map,
                         )
+
+                        store_coverage, coverage_error = coverage_result
+
+                        if coverage_error:
+                            raise ValueError(coverage_error)
 
                     progress_placeholder = st.empty()
                     progress_bar = st.progress(0)
