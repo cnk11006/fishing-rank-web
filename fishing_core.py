@@ -458,13 +458,22 @@ def worksheet_records_safe(
     worksheet,
     expected_headers: list[str],
 ) -> tuple[list[dict[str, Any]], str | None]:
+values = worksheet.get_all_values()
+
+if not values:
+    worksheet.update(
+        values=[RANK_HISTORY_HEADERS],
+        range_name="A1",
+        value_input_option="RAW",
+    )
+else:
     ok, error = ensure_worksheet_headers(
         worksheet,
-        expected_headers,
+        RANK_HISTORY_HEADERS,
     )
 
     if not ok:
-        return [], error
+        raise ValueError(error)
 
     try:
         return worksheet.get_all_records(), None
