@@ -3558,6 +3558,7 @@ if current_menu == "🛒 교차구매 분석":
                         "order_files": cross_files,
 
                         # 기준상품 계열
+                        "target_query": target_product_keyword.strip(),
                         "target_product": target_product_keyword.strip(),
                         "target_keyword": target_product_keyword.strip(),
                         "keyword": target_product_keyword.strip(),
