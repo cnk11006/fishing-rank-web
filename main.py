@@ -1541,20 +1541,44 @@ if active_tab == "📋 모니터링 관리":
                             ),
                         )
 
-                    with st.container(border=True):
-                        if best_item:
-                            thumbnail = safe_url(
-                                best_item.get(
-                                    "썸네일",
-                                    "",
-                                )
-                            )
+                    thumbnail = ""
+                    product_link = ""
 
-                            if thumbnail:
+                    if best_item:
+                        thumbnail = safe_url(
+                            best_item.get("썸네일")
+                            or best_item.get("이미지")
+                            or best_item.get("이미지URL")
+                            or best_item.get("image")
+                            or ""
+                        )
+
+                        product_link = safe_url(
+                            best_item.get("링크")
+                            or best_item.get("상품링크")
+                            or best_item.get("link")
+                            or ""
+                        )
+
+                    with st.container(border=True):
+                        if thumbnail:
+                            if product_link:
+                                st.markdown(
+                                    f"""
+                                    <a href="{product_link}" target="_blank">
+                                        <img src="{thumbnail}"
+                                             style="width:100%; max-height:150px;
+                                             object-fit:contain; cursor:pointer;">
+                                    </a>
+                                    """,
+                                    unsafe_allow_html=True,
+                                )
+                            else:
                                 st.image(
                                     thumbnail,
-                                    width=100,
+                                    use_container_width=True,
                                 )
+
 
                         st.markdown(
                             f"**🔑 {keyword}**"
@@ -1602,16 +1626,9 @@ if active_tab == "📋 모니터링 관리":
                                 or "ℹ️ 노출형태 미확인"
                             )
 
-                            product_link = safe_url(
-                                best_item.get(
-                                    "링크",
-                                    "",
-                                )
-                            )
-
                             if product_link:
                                 st.link_button(
-                                    "🛍️ 상품 열기",
+                                    "🛍️ 상품 페이지 바로가기",
                                     product_link,
                                     use_container_width=True,
                                 )
