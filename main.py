@@ -3325,6 +3325,10 @@ if active_tab == "📢 광고 진단 & 시즌":
 import inspect
 from io import BytesIO
 
+NAVER_CLIENT_ID = globals().get("naver_client_id", "")
+NAVER_CLIENT_SECRET = globals().get("naver_client_secret", "")
+GOOGLE_SHEET_ID = globals().get("google_sheet_id", "")
+APP_PASSWORD = globals().get("app_password", "")
 
 def call_with_supported_arguments(func, argument_map):
     """
