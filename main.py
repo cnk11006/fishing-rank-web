@@ -3467,7 +3467,7 @@ def render_result_download_buttons(
         st.download_button(
             label="⬇️ CSV 다운로드",
             data=csv_data,
-            file_name=f"{file_prefix}_{kst_now().strftime('%Y%m%d_%H%M')}.csv",
+            file_name=f"{file_prefix}_{now_kst().strftime('%Y%m%d_%H%M')}.csv",
             mime="text/csv",
             use_container_width=True,
         )
@@ -3476,7 +3476,7 @@ def render_result_download_buttons(
         st.download_button(
             label="⬇️ Excel 다운로드",
             data=excel_data,
-            file_name=f"{file_prefix}_{kst_now().strftime('%Y%m%d_%H%M')}.xlsx",
+            file_name=f"{file_prefix}_{now_kst().strftime('%Y%m%d_%H%M')}.xlsx",
             mime=(
                 "application/vnd.openxmlformats-officedocument."
                 "spreadsheetml.sheet"
