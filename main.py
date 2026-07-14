@@ -3890,65 +3890,28 @@ elif current_menu == "🎯 사입 후보 발굴":
                     progress_placeholder.info(
                         "네이버 쇼핑 검색 결과와 검색량을 분석하고 있습니다."
                     )
-
                     candidate_argument_map = {
-                        # 기준 검색어
-                        "base_keywords": base_keywords,
-                        "keywords": base_keywords,
-                        "seed_keywords": base_keywords,
+                        "brands": [],
+                        "seasons": base_keywords,
+                        "genres": [],
 
-                        # 자사 상품 마스터
-                        "product_df": product_master_dataframe,
-                        "product_dataframe": product_master_dataframe,
-                        "master_df": product_master_dataframe,
-                        "product_master": product_master_dataframe,
+                        "client_id": CLIENT_ID,
+                        "client_secret": CLIENT_SECRET,
 
-                        # 취급 범위
-                        "store_coverage": store_coverage,
                         "coverage": store_coverage,
-                        "owned_coverage": store_coverage,
 
-                        # 검색 옵션
-                        "max_results": int(candidate_max_results),
-                        "max_items": int(candidate_max_results),
-                        "display_limit": int(candidate_max_results),
-
-                        "max_keywords": int(candidate_max_keywords),
-                        "keyword_limit": int(candidate_max_keywords),
-
-                        "min_volume": int(candidate_min_volume),
-                        "minimum_volume": int(candidate_min_volume),
-
-                        "limit": int(candidate_limit),
-                        "top_n": int(candidate_limit),
-
-                        # 제외 옵션
-                        "exclude_owned": bool(candidate_exclude_owned),
-                        "exclude_same_product": bool(
-                            candidate_exclude_owned
-                        ),
-                        "exclude_owned_group": bool(
-                            candidate_exclude_group
-                        ),
-                        "exclude_same_group": bool(
-                            candidate_exclude_group
-                        ),
-                        "exclude_used": bool(candidate_exclude_used),
-                        "exclude_rental": bool(candidate_exclude_rental),
-                        "exclude_overseas": bool(
-                            candidate_exclude_overseas
+                        "max_rank": min(
+                            int(candidate_max_results),
+                            100,
                         ),
 
-                        # 인증정보
-                        "client_id": NAVER_CLIENT_ID,
-                        "client_secret": NAVER_CLIENT_SECRET,
-                        "naver_client_id": NAVER_CLIENT_ID,
-                        "naver_client_secret": NAVER_CLIENT_SECRET,
+                        "exclude_used_rental_overseas": (
+                            bool(candidate_exclude_used)
+                            and bool(candidate_exclude_rental)
+                            and bool(candidate_exclude_overseas)
+                        ),
 
-                        # Streamlit 진행 표시
-                        "progress_bar": progress_bar,
-                        "progress": progress_bar,
-                        "status_placeholder": progress_placeholder,
+                        "show_progress": True,
                     }
 
                     with st.spinner(
