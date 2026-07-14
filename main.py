@@ -3850,34 +3850,18 @@ elif current_menu == "🎯 사입 후보 발굴":
         else:
             try:
                 with st.spinner("자사 상품 마스터를 불러오는 중입니다..."):
-                    master_argument_map = {
-                        "master_file": product_master_file,
-                        "uploaded_file": product_master_file,
-                        "file": product_master_file,
-                        "excel_file": product_master_file,
-                        "product_file": product_master_file,
-                    }
+                    product_master_file.seek(0)
 
-                    product_master = call_with_supported_arguments(
-                        load_product_master,
-                        master_argument_map,
-                    )
+                    product_master_dataframe = pd.read_excel(
+                        product_master_file,
+                        dtype=str,
+                        engine="openpyxl",
+                    ).fillna("")
 
-                    if isinstance(product_master, tuple):
-                        product_master_dataframe = next(
-                            (
-                                item
-                                for item in product_master
-                                if isinstance(item, pd.DataFrame)
-                            ),
-                            pd.DataFrame(),
-                        )
-                    elif isinstance(product_master, pd.DataFrame):
-                        product_master_dataframe = product_master
-                    else:
-                        product_master_dataframe = pd.DataFrame(
-                            product_master
-                        )
+                    product_master_dataframe.columns = [
+                        str(column).strip()
+                        for column in product_master_dataframe.columns
+                    ]
 
                 if product_master_dataframe.empty:
                     st.warning(
@@ -3887,6 +3871,7 @@ elif current_menu == "🎯 사입 후보 발굴":
                 else:
                     with st.spinner("자사 상품 취급 범위를 분석 중입니다..."):
                         coverage_argument_map = {
+                            "store_dataframe": product_master_dataframe,
                             "product_df": product_master_dataframe,
                             "product_dataframe": product_master_dataframe,
                             "df": product_master_dataframe,
