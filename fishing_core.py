@@ -423,32 +423,33 @@ def get_or_create_worksheet(
             cols=cols,
         )
 
-
 def ensure_worksheet_headers(
     worksheet,
     expected_headers: list[str],
 ) -> tuple[bool, str | None]:
-    """
-    빈 시트에는 헤더를 생성한다.
-
-    기존 시트의 헤더가 다를 경우 데이터를 삭제하지 않고 오류만 반환한다.
-    """
     values = worksheet.get_all_values()
 
-    if not values:
-        worksheet.append_row(
-            expected_headers,
+    if not values or not any(
+        str(value).strip()
+        for value in values[0]
+    ):
+        worksheet.update(
+            values=[expected_headers],
+            range_name="A1",
             value_input_option="RAW",
         )
         return True, None
 
-    current = values[0]
+    current_headers = [
+        str(value).strip()
+        for value in values[0]
+    ]
 
-    if current[:len(expected_headers)] != expected_headers:
+    if current_headers != expected_headers:
         return (
             False,
             f"'{worksheet.title}' 시트 헤더가 예상 형식과 다릅니다. "
-            f"현재: {current} / 필요: {expected_headers}",
+            f"현재: {current_headers} / 필요: {expected_headers}",
         )
 
     return True, None
