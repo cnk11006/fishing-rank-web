@@ -5992,6 +5992,7 @@ def find_candidates(
                         else []
                     ),
                 }
+            )
 
             else:
                 candidate = candidates[
