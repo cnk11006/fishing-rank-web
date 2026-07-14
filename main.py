@@ -3379,6 +3379,14 @@ def extract_dataframe_from_result(result):
         if dataframes:
             return max(dataframes, key=len)
 
+        for item in result:
+            if isinstance(item, list):
+                if item and isinstance(item[0], dict):
+                    return pd.DataFrame(item)
+
+                if not item:
+                    continue
+
     if isinstance(result, dict):
         preferred_keys = [
             "result",
