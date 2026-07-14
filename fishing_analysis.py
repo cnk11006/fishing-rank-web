@@ -627,18 +627,13 @@ def ensure_ad_history_sheet():
 
     values = worksheet.get_all_values()
 
-    # 구버전 광고진단 시트는 삭제하지 않고 이름을 변경해 보존
-    if (
-        values
-        and values[0][:3]
-        == ["날짜", "상품명", "노출수"]
-    ):
-        backup_name = (
+    if values and values[0] != AD_HISTORY_HEADERS:
+        backup_title = (
             "광고진단_구버전_"
             + now_kst().strftime("%Y%m%d_%H%M%S")
         )
 
-        worksheet.update_title(backup_name)
+        worksheet.update_title(backup_title)
 
         worksheet = get_or_create_worksheet(
             spreadsheet,
@@ -647,16 +642,24 @@ def ensure_ad_history_sheet():
             cols=len(AD_HISTORY_HEADERS),
         )
 
-    ok, error = ensure_worksheet_headers(
-        worksheet,
-        AD_HISTORY_HEADERS,
-    )
+        values = worksheet.get_all_values()
 
-    if not ok:
-        raise ValueError(error)
+    if not values:
+        worksheet.update(
+            values=[AD_HISTORY_HEADERS],
+            range_name="A1",
+            value_input_option="RAW",
+        )
+    else:
+        ok, error = ensure_worksheet_headers(
+            worksheet,
+            AD_HISTORY_HEADERS,
+        )
+
+        if not ok:
+            raise ValueError(error)
 
     return worksheet
-
 
 def save_ad_diagnosis(
     rows: list[dict[str, Any]],
