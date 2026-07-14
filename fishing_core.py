@@ -453,34 +453,27 @@ def ensure_worksheet_headers(
 
     return True, None
 
-
 def worksheet_records_safe(
     worksheet,
     expected_headers: list[str],
 ) -> tuple[list[dict[str, Any]], str | None]:
-values = worksheet.get_all_values()
-
-if not values:
-    worksheet.update(
-        values=[RANK_HISTORY_HEADERS],
-        range_name="A1",
-        value_input_option="RAW",
-    )
-else:
     ok, error = ensure_worksheet_headers(
         worksheet,
-        RANK_HISTORY_HEADERS,
+        expected_headers,
     )
 
     if not ok:
-        raise ValueError(error)
+        return [], error
 
     try:
         return worksheet.get_all_records(), None
-    except Exception as exc:
-        logger.exception("워크시트 읽기 실패: %s", worksheet.title)
-        return [], str(exc)
 
+    except Exception as exc:
+        logger.exception(
+            "%s 시트 데이터 읽기 실패",
+            worksheet.title,
+        )
+        return [], f"시트 데이터 읽기 오류: {exc}"
 
 def append_raw_rows(
     worksheet,
@@ -514,16 +507,27 @@ def ensure_rank_history_sheet():
         cols=len(RANK_HEADERS),
     )
 
-    ok, error = ensure_worksheet_headers(
-        worksheet,
-        RANK_HEADERS,
-    )
+    values = worksheet.get_all_values()
 
-    if not ok:
-        raise ValueError(error)
+    if not values or not any(
+        str(value).strip()
+        for value in values[0]
+    ):
+        worksheet.update(
+            values=[RANK_HEADERS],
+            range_name="A1",
+            value_input_option="RAW",
+        )
+    else:
+        ok, error = ensure_worksheet_headers(
+            worksheet,
+            RANK_HEADERS,
+        )
+
+        if not ok:
+            raise ValueError(error)
 
     return worksheet
-
 
 def make_rank_record_id(
     collected_at: str,
