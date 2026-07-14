@@ -1925,10 +1925,13 @@ if active_tab == "📋 모니터링 관리":
                 ] = None
                 st.rerun()
 
-
 # =========================================================
 # 9. TAB 3 — 키워드 분석
 # =========================================================
+
+if active_tab == "📊 키워드 분석":
+    st.subheader("📊 네이버 검색광고 키워드 분석")
+
     with st.form(
         "keyword_analysis_form",
         clear_on_submit=False,
