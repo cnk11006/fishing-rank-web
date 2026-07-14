@@ -427,23 +427,18 @@ def ensure_worksheet_headers(
     worksheet,
     expected_headers: list[str],
 ) -> tuple[bool, str | None]:
-    values = worksheet.get_all_values()
-
-    if not values or not any(
+    current_headers = [
         str(value).strip()
-        for value in values[0]
-    ):
+        for value in worksheet.row_values(1)
+    ]
+
+    if not current_headers:
         worksheet.update(
             values=[expected_headers],
             range_name="A1",
             value_input_option="RAW",
         )
         return True, None
-
-    current_headers = [
-        str(value).strip()
-        for value in values[0]
-    ]
 
     if current_headers != expected_headers:
         return (
@@ -508,25 +503,19 @@ def ensure_rank_history_sheet():
         cols=len(RANK_HEADERS),
     )
 
-    values = worksheet.get_all_values()
+    current_headers = worksheet.row_values(1)
 
-    if not values or not any(
-        str(value).strip()
-        for value in values[0]
-    ):
+    if not current_headers:
         worksheet.update(
             values=[RANK_HEADERS],
             range_name="A1",
             value_input_option="RAW",
         )
-    else:
-        ok, error = ensure_worksheet_headers(
-            worksheet,
-            RANK_HEADERS,
+    elif current_headers != RANK_HEADERS:
+        raise ValueError(
+            f"'{worksheet.title}' 시트 헤더가 예상 형식과 다릅니다. "
+            f"현재: {current_headers} / 필요: {RANK_HEADERS}"
         )
-
-        if not ok:
-            raise ValueError(error)
 
     return worksheet
 
