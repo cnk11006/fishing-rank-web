@@ -2848,6 +2848,19 @@ def find_candidates(
 
     for spec_index, spec in enumerate(specs):
         keyword = spec["keyword"]
+        requested_brand = str(
+            spec.get("brand", "")
+        ).strip()
+
+        if not requested_brand:
+            normalized_keyword = normalize_text(keyword)
+
+            for registered_brand in BRAND_ALIAS:
+                if normalized_keyword in get_brand_aliases(
+                    registered_brand
+                ):
+                    requested_brand = registered_brand
+                    break
 
         if progress is not None:
             progress.progress(
@@ -2897,19 +2910,35 @@ def find_candidates(
                 item.get("상품명", "")
             ).strip()
 
+            category1 = str(
+                item.get("카테고리1", "")
+            ).strip()
+
+            excluded_categories = {
+                "패션의류",
+                "패션잡화",
+                "화장품/미용",
+                "출산/육아",
+                "식품",
+                "디지털/가전",
+            }
+
+            if category1 in excluded_categories:
+                continue
+
             mall_name = str(
                 item.get("판매처", "")
             ).strip()
 
             matched_brand = match_candidate_brand(
                 item=item,
-                requested_brand=spec.get("brand", ""),
+                requested_brand=requested_brand,
                 all_brands=brands,
             )
 
             # 특정 브랜드 검색인데 상품과 브랜드가 맞지 않으면 제외
             if not requested_brand_matches(
-                spec.get("brand", ""),
+                requested_brand,
                 matched_brand,
             ):
                 continue
