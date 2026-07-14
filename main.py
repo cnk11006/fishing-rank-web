@@ -3851,6 +3851,7 @@ elif current_menu == "🎯 사입 후보 발굴":
             try:
                 with st.spinner("자사 상품 마스터를 불러오는 중입니다..."):
                     master_argument_map = {
+                        "master_file": product_master_file,
                         "uploaded_file": product_master_file,
                         "file": product_master_file,
                         "excel_file": product_master_file,
