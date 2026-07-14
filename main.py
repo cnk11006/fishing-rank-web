@@ -631,6 +631,8 @@ active_tab = st.radio(
     key="main_menu",
 )
 
+menu = active_tab
+selected_menu = active_tab
 
 # =========================================================
 # 6. 상세 분석 패널
@@ -3683,7 +3685,7 @@ if current_menu == "🛒 교차구매 분석":
 # 2. 사입 후보 찾기
 # ============================================================
 
-elif current_menu == "🎯 사입 후보":
+elif current_menu == "🎯 사입 후보 발굴":
     st.title("🎯 사입 후보 찾기")
 
     st.info(
