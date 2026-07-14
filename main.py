@@ -1929,29 +1929,28 @@ if active_tab == "📋 모니터링 관리":
 # =========================================================
 # 9. TAB 3 — 키워드 분석
 # =========================================================
-
-if active_tab == "📊 키워드 분석":
-    st.subheader("📊 네이버 검색광고 키워드 분석")
-
-    keyword_column, button_column = st.columns(
-        [4, 1]
-    )
-
-    with keyword_column:
-        analysis_keyword = st.text_input(
-            "분석할 키워드",
-            placeholder="예: 타이라바 로드",
-            label_visibility="collapsed",
-            key="keyword_analysis_input",
+    with st.form(
+        "keyword_analysis_form",
+        clear_on_submit=False,
+    ):
+        keyword_column, button_column = st.columns(
+            [4, 1]
         )
 
-    with button_column:
-        analysis_button = st.button(
-            "🔍 분석 시작",
-            type="primary",
-            use_container_width=True,
-            key="keyword_analysis_button",
-        )
+        with keyword_column:
+            analysis_keyword = st.text_input(
+                "분석할 키워드",
+                placeholder="예: 타이라바 로드",
+                label_visibility="collapsed",
+                key="keyword_analysis_input",
+            )
+
+        with button_column:
+            analysis_button = st.form_submit_button(
+                "🔍 분석 시작",
+                type="primary",
+                width="stretch",
+            )
 
     if analysis_button:
         analysis_keyword = str(
