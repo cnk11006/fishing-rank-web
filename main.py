@@ -984,35 +984,37 @@ def normalize_keyword_for_compare(
 
 if active_tab == "🔍 순위 검색":
     st.subheader("🔍 네이버쇼핑 순위 검색")
-
-    search_column, option_column = st.columns(
-        [4, 2]
-    )
-
-    with search_column:
-        search_keyword = st.text_input(
-            "검색할 키워드",
-            placeholder="예: 타이라바 로드",
-            key="rank_search_keyword_input",
+    with st.form(
+        "rank_search_form",
+        clear_on_submit=False,
+    ):
+        search_column, option_column = st.columns(
+            [4, 2]
         )
 
-    with option_column:
-        include_special_products = st.checkbox(
-            "중고·렌탈·해외직구 포함",
-            value=False,
-            help=(
-                "체크하지 않으면 중고·렌탈·해외직구를 "
-                "가격 및 순위 분석에서 제외합니다."
-            ),
-            key="rank_include_special",
-        )
+        with search_column:
+            search_keyword = st.text_input(
+                "검색할 키워드",
+                placeholder="예: 타이라바 로드",
+                key="rank_search_keyword_input",
+            )
 
-    search_button = st.button(
-        "🚀 400위까지 정밀 수색 시작",
-        type="primary",
-        use_container_width=True,
-        key="rank_search_button",
-    )
+        with option_column:
+            include_special_products = st.checkbox(
+                "중고·렌탈·해외직구 포함",
+                value=False,
+                help=(
+                    "체크하지 않으면 중고·렌탈·해외직구를 "
+                    "가격 및 순위 분석에서 제외합니다."
+                ),
+                key="rank_include_special",
+            )
+
+        search_button = st.form_submit_button(
+            "🚀 400위까지 정밀 수색 시작",
+            type="primary",
+            width="stretch",
+        )
 
     if search_button:
         search_keyword = str(
