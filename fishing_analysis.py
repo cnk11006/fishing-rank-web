@@ -2969,6 +2969,8 @@ def find_candidates(
                     ),
                     "링크": safe_url(
                         item.get("링크", "")
+                    ),
+
 from __future__ import annotations
 
 import json
