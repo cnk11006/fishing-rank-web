@@ -9,6 +9,7 @@ import logging
 import re
 import time
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from typing import Any, Iterable
 from urllib.parse import urlparse
@@ -1919,4 +1920,333 @@ def get_shopping_category_summary(
             {},
             f"쇼핑 카테고리 분석 오류: {exc}",
         )
+def _calculate_keyword_type(
+    keyword: str,
+    category_summary: dict[str, Any] | None,
+) -> str:
+    """
+    네이버쇼핑 검색 결과와 키워드 형태를 이용해
+    쇼핑성/정보성을 추정합니다.
+
+    네이버가 공식적으로 제공하는 수치가 아니라
+    프로그램 내부 추정값입니다.
+    """
+    clean_keyword = str(
+        keyword or ""
+    ).strip().lower()
+
+    summary = category_summary or {}
+
+    category_path = str(
+        summary.get("대표 카테고리") or ""
+    ).strip()
+
+    try:
+        category_ratio = float(
+            summary.get("대표 카테고리 비중") or 0
+        )
+    except (TypeError, ValueError):
+        category_ratio = 0.0
+
+    try:
+        product_count = int(
+            summary.get("분석 상품수") or 0
+        )
+    except (TypeError, ValueError):
+        product_count = 0
+
+    # 기본 쇼핑성 점수
+    shopping_score = 50.0
+
+    # 대표 카테고리가 정상적으로 확인된 경우
+    if (
+        category_path
+        and category_path
+        not in {
+            "-",
+            "확인 불가",
+            "카테고리 없음",
+        }
+    ):
+        shopping_score += 18.0
+
+    # 쇼핑 상품 수 반영
+    if product_count >= 10:
+        shopping_score += 8.0
+    elif product_count >= 5:
+        shopping_score += 5.0
+    elif product_count >= 1:
+        shopping_score += 2.0
+    else:
+        shopping_score -= 15.0
+
+    # 대표 카테고리 집중도 반영
+    ratio_adjustment = (
+        category_ratio - 50.0
+    ) * 0.25
+
+    ratio_adjustment = max(
+        -10.0,
+        min(10.0, ratio_adjustment),
+    )
+
+    shopping_score += ratio_adjustment
+
+    shopping_terms = (
+        "구매",
+        "가격",
+        "최저가",
+        "할인",
+        "세일",
+        "특가",
+        "판매",
+        "주문",
+        "정품",
+        "세트",
+        "대용량",
+        "소용량",
+        "무료배송",
+        "쿠폰",
+        "신제품",
+    )
+
+    strong_information_terms = (
+        "방법",
+        "하는법",
+        "사용법",
+        "쓰는법",
+        "만드는법",
+        "뜻",
+        "의미",
+        "원인",
+        "증상",
+        "해결",
+        "고치는법",
+        "설치법",
+        "시기",
+        "기간",
+        "언제",
+        "어디서",
+        "왜",
+        "무엇",
+        "뭐야",
+        "정리",
+        "공략",
+    )
+
+    mixed_information_terms = (
+        "후기",
+        "리뷰",
+        "비교",
+        "차이",
+        "추천",
+        "장단점",
+        "순위",
+        "종류",
+    )
+
+    if any(
+        term in clean_keyword
+        for term in shopping_terms
+    ):
+        shopping_score += 14.0
+
+    if any(
+        term in clean_keyword
+        for term in strong_information_terms
+    ):
+        shopping_score -= 42.0
+
+    if any(
+        term in clean_keyword
+        for term in mixed_information_terms
+    ):
+        shopping_score -= 15.0
+
+    shopping_score = round(
+        max(
+            5.0,
+            min(95.0, shopping_score),
+        )
+    )
+
+    if shopping_score >= 60:
+        return f"쇼핑성 {shopping_score}%"
+
+    if shopping_score <= 40:
+        information_score = (
+            100 - shopping_score
+        )
+
+        return f"정보성 {information_score}%"
+
+    return (
+        f"혼합형 · 쇼핑 {shopping_score}%"
+    )
+
+
+def get_keyword_category_info_map(
+    keywords: Iterable[str],
+    client_id: str,
+    client_secret: str,
+    display: int = 20,
+    max_workers: int = 8,
+) -> tuple[
+    dict[str, dict[str, str]],
+    list[str],
+]:
+    """
+    여러 키워드의 대표 카테고리와 키워드 유형을
+    동시에 수집합니다.
+    """
+    cleaned_keywords: list[str] = []
+    seen: set[str] = set()
+
+    for keyword in keywords:
+        clean_keyword = str(
+            keyword or ""
+        ).strip()
+
+        if not clean_keyword:
+            continue
+
+        if clean_keyword in seen:
+            continue
+
+        seen.add(clean_keyword)
+        cleaned_keywords.append(clean_keyword)
+
+    if not cleaned_keywords:
+        return {}, []
+
+    result_map: dict[
+        str,
+        dict[str, str],
+    ] = {}
+
+    errors: list[str] = []
+
+    worker_count = max(
+        1,
+        min(
+            int(max_workers),
+            8,
+            len(cleaned_keywords),
+        ),
+    )
+
+    def collect_one(
+        keyword: str,
+    ) -> tuple[
+        str,
+        dict[str, str],
+        str | None,
+    ]:
+        try:
+            summary, error = (
+                get_shopping_category_summary(
+                    keyword=keyword,
+                    client_id=client_id,
+                    client_secret=client_secret,
+                    display=display,
+                )
+            )
+
+            summary = summary or {}
+
+            representative_category = str(
+                summary.get(
+                    "대표 카테고리"
+                )
+                or "확인 불가"
+            ).strip()
+
+            if not representative_category:
+                representative_category = (
+                    "확인 불가"
+                )
+
+            keyword_type = (
+                _calculate_keyword_type(
+                    keyword=keyword,
+                    category_summary=summary,
+                )
+            )
+
+            keyword_info = {
+                "대표 카테고리": (
+                    representative_category
+                ),
+                "키워드 유형": keyword_type,
+            }
+
+            return (
+                keyword,
+                keyword_info,
+                error,
+            )
+
+        except Exception as exc:
+            keyword_info = {
+                "대표 카테고리":
+                    "확인 불가",
+                "키워드 유형":
+                    "판단 불가",
+            }
+
+            return (
+                keyword,
+                keyword_info,
+                f"{keyword}: "
+                f"{type(exc).__name__} - {exc}",
+            )
+
+    with ThreadPoolExecutor(
+        max_workers=worker_count
+    ) as executor:
+        future_map = {
+            executor.submit(
+                collect_one,
+                keyword,
+            ): keyword
+            for keyword in cleaned_keywords
+        }
+
+        for future in as_completed(
+            future_map
+        ):
+            keyword = future_map[future]
+
+            try:
+                (
+                    returned_keyword,
+                    keyword_info,
+                    error,
+                ) = future.result()
+
+                result_map[
+                    returned_keyword
+                ] = keyword_info
+
+                if error:
+                    errors.append(
+                        f"{returned_keyword}: "
+                        f"{error}"
+                    )
+
+            except Exception as exc:
+                result_map[keyword] = {
+                    "대표 카테고리":
+                        "확인 불가",
+                    "키워드 유형":
+                        "판단 불가",
+                }
+
+                errors.append(
+                    f"{keyword}: "
+                    f"{type(exc).__name__} - "
+                    f"{exc}"
+                )
+
+    return result_map, errors
 
