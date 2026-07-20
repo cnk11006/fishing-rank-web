@@ -257,6 +257,8 @@ SESSION_DEFAULTS = {
     "analysis_keyword": "",
     "analysis_results": None,
     "main_keyword_result": None,
+    "analysis_category_summary": None,
+    "analysis_category_error": None,
     "ad_diag_rows": None,
     "ad_diag_collected_at": None,
     "ad_diag_errors": [],
@@ -1967,13 +1969,46 @@ if active_tab == "📊 키워드 분석":
 
         else:
             with st.spinner(
-                "키워드 검색량과 연관 키워드를 불러오고 있습니다..."
+                "키워드 검색량·연관 키워드·쇼핑 카테고리를 "
+                "불러오고 있습니다..."
             ):
                 keyword_results = (
                     get_keyword_stats_list(
                         [analysis_keyword]
                     )
                 )
+
+                (
+                    category_summary,
+                    category_error,
+                ) = get_shopping_category_summary(
+                    keyword=analysis_keyword,
+                    client_id=CLIENT_ID,
+                    client_secret=CLIENT_SECRET,
+                    display=100,
+                )
+
+            st.session_state[
+                "analysis_category_summary"
+            ] = category_summary
+
+            st.session_state[
+                "analysis_category_error"
+            ] = category_error
+
+            if not keyword_results:
+                st.error(
+                    f"'{analysis_keyword}'의 "
+                    "키워드 데이터를 찾지 못했습니다."
+                )
+
+            else:
+                normalized_target = (
+                    normalize_keyword_for_compare(
+                        analysis_keyword
+                    )
+                )
+
 
             if not keyword_results:
                 st.error(
@@ -2075,6 +2110,156 @@ if active_tab == "📊 키워드 분석":
             st.caption(
                 "※ '<10'으로 제공된 검색량은 "
                 "계산 편의를 위해 5로 추정했습니다."
+            )
+        category_summary = (
+            st.session_state.get(
+                "analysis_category_summary"
+            )
+            or {}
+        )
+
+        category_error = (
+            st.session_state.get(
+                "analysis_category_error"
+            )
+        )
+
+        st.divider()
+
+        st.markdown(
+            "### 🗂️ 네이버쇼핑 카테고리 분석"
+        )
+
+        if category_error:
+            st.warning(category_error)
+
+        if category_summary:
+            category_col1, category_col2, category_col3 = (
+                st.columns(3)
+            )
+
+            representative_category1 = (
+                category_summary.get(
+                    "대분류",
+                    "",
+                )
+                or "-"
+            )
+
+            representative_detail = (
+                category_summary.get(
+                    "세분류",
+                    "",
+                )
+                or category_summary.get(
+                    "소분류",
+                    "",
+                )
+                or category_summary.get(
+                    "중분류",
+                    "",
+                )
+                or "-"
+            )
+
+            representative_ratio = safe_float(
+                category_summary.get(
+                    "대표 카테고리 비중"
+                )
+            )
+
+            category_col1.metric(
+                "대표 대분류",
+                representative_category1,
+            )
+
+            category_col2.metric(
+                "대표 상세 카테고리",
+                representative_detail,
+            )
+
+            category_col3.metric(
+                "대표 카테고리 비중",
+                f"{representative_ratio:.1f}%",
+            )
+
+            representative_path = str(
+                category_summary.get(
+                    "대표 카테고리",
+                    "-",
+                )
+            )
+
+            analyzed_product_count = safe_int(
+                category_summary.get(
+                    "분석 상품수"
+                )
+            )
+
+            st.info(
+                f"대표 카테고리: "
+                f"**{representative_path}**"
+            )
+
+            st.caption(
+                f"네이버쇼핑 검색결과 "
+                f"{analyzed_product_count:,}개 상품의 "
+                "카테고리를 집계한 결과입니다."
+            )
+
+            category_distribution = (
+                category_summary.get(
+                    "카테고리 분포",
+                    [],
+                )
+                or []
+            )
+
+            if category_distribution:
+                category_df = pd.DataFrame(
+                    category_distribution
+                )
+
+                st.dataframe(
+                    category_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "상품수":
+                            st.column_config.NumberColumn(
+                                "상품수",
+                                format="%d개",
+                            ),
+                        "비중(%)":
+                            st.column_config.ProgressColumn(
+                                "비중",
+                                min_value=0,
+                                max_value=100,
+                                format="%.1f%%",
+                            ),
+                    },
+                )
+
+                category_csv = (
+                    category_df
+                    .to_csv(index=False)
+                    .encode("utf-8-sig")
+                )
+
+                st.download_button(
+                    "📥 카테고리 분석 CSV 다운로드",
+                    data=category_csv,
+                    file_name=(
+                        f"{stored_analysis_keyword}_카테고리분석_"
+                        f"{now_kst().strftime('%Y%m%d')}.csv"
+                    ),
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+
+        elif not category_error:
+            st.info(
+                "표시할 쇼핑 카테고리 정보가 없습니다."
             )
 
         st.divider()
