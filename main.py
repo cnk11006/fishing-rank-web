@@ -28,6 +28,7 @@ from fishing_core import (
     collect_rank_data,
     delete_monitor_items,
     get_catalog_badge,
+    get_keyword_category_info_map,
     get_keyword_stats_list,
     get_shopping_category_summary,
     is_our_store_name,
@@ -256,9 +257,9 @@ SESSION_DEFAULTS = {
     "detail_item_id": None,
     "analysis_keyword": "",
     "analysis_results": None,
+    "analysis_category_info_map": {},
+    "analysis_category_errors": [],
     "main_keyword_result": None,
-    "analysis_category_summary": None,
-    "analysis_category_error": None,
     "ad_diag_rows": None,
     "ad_diag_collected_at": None,
     "ad_diag_errors": [],
@@ -268,7 +269,6 @@ SESSION_DEFAULTS = {
     "cross_purchase_rows": None,
     "brand_contribution_rows": None,
 }
-
 
 for session_key, default_value in SESSION_DEFAULTS.items():
     if session_key not in st.session_state:
@@ -1969,48 +1969,99 @@ if active_tab == "📊 키워드 분석":
 
         else:
             with st.spinner(
-                "키워드 검색량·연관 키워드·쇼핑 카테고리를 "
-                "불러오고 있습니다..."
+                "키워드 검색량·연관 키워드·카테고리를 "
+                "빠르게 불러오고 있습니다..."
             ):
-                keyword_results = (
+                raw_keyword_results = (
                     get_keyword_stats_list(
                         [analysis_keyword]
                     )
                 )
 
-                (
-                    category_summary,
-                    category_error,
-                ) = get_shopping_category_summary(
-                    keyword=analysis_keyword,
-                    client_id=CLIENT_ID,
-                    client_secret=CLIENT_SECRET,
-                    display=100,
-                )
+                if isinstance(
+                    raw_keyword_results,
+                    pd.DataFrame,
+                ):
+                    keyword_results = (
+                        raw_keyword_results
+                        .to_dict("records")
+                    )
 
-            st.session_state[
-                "analysis_category_summary"
-            ] = category_summary
+                elif isinstance(
+                    raw_keyword_results,
+                    list,
+                ):
+                    keyword_results = [
+                        row
+                        for row in raw_keyword_results
+                        if isinstance(row, dict)
+                    ]
 
-            st.session_state[
-                "analysis_category_error"
-            ] = category_error
+                else:
+                    keyword_results = []
 
-            if not keyword_results:
-                st.error(
-                    f"'{analysis_keyword}'의 "
-                    "키워드 데이터를 찾지 못했습니다."
-                )
+                category_target_keywords = [
+                    analysis_keyword
+                ]
 
-            else:
-                normalized_target = (
-                    normalize_keyword_for_compare(
-                        analysis_keyword
+                for row in keyword_results:
+                    related_keyword = str(
+                        row.get("키워드")
+                        or row.get("연관키워드")
+                        or row.get("relKeyword")
+                        or row.get("keyword")
+                        or ""
+                    ).strip()
+
+                    if related_keyword:
+                        category_target_keywords.append(
+                            related_keyword
+                        )
+
+                category_target_keywords = list(
+                    dict.fromkeys(
+                        keyword
+                        for keyword
+                        in category_target_keywords
+                        if keyword
                     )
                 )
 
+                if keyword_results:
+                    (
+                        category_info_map,
+                        category_errors,
+                    ) = get_keyword_category_info_map(
+                        keywords=(
+                            category_target_keywords
+                        ),
+                        client_id=CLIENT_ID,
+                        client_secret=CLIENT_SECRET,
+                        display=20,
+                        max_workers=8,
+                    )
+
+                else:
+                    category_info_map = {}
+                    category_errors = []
+
+            st.session_state[
+                "analysis_category_info_map"
+            ] = category_info_map
+
+            st.session_state[
+                "analysis_category_errors"
+            ] = category_errors
 
             if not keyword_results:
+                st.session_state[
+                    "analysis_results"
+                ] = None
+
+                st.session_state[
+                    "main_keyword_result"
+                ] = None
+
                 st.error(
                     f"'{analysis_keyword}'의 "
                     "키워드 데이터를 찾지 못했습니다."
@@ -2060,37 +2111,54 @@ if active_tab == "📊 키워드 분석":
         "analysis_results"
     )
 
-    stored_analysis_keyword = (
+    stored_analysis_keyword = str(
         st.session_state.get(
             "analysis_keyword",
             "",
         )
-    )
+    ).strip()
 
     if main_result and keyword_results:
         st.divider()
 
         st.markdown(
-            f"### 📌 '{stored_analysis_keyword}' 분석 결과"
+            f"### 📌 "
+            f"'{stored_analysis_keyword}' 분석 결과"
         )
 
-        metric1, metric2, metric3, metric4, metric5 = (
-            st.columns(5)
-        )
+        (
+            metric1,
+            metric2,
+            metric3,
+            metric4,
+            metric5,
+        ) = st.columns(5)
 
         metric1.metric(
             "💻 PC 검색량",
-            f"{safe_int(main_result.get('PC 검색량')):,}",
+            (
+                f"{safe_int(
+                    main_result.get('PC 검색량')
+                ):,}"
+            ),
         )
 
         metric2.metric(
             "📱 모바일 검색량",
-            f"{safe_int(main_result.get('모바일 검색량')):,}",
+            (
+                f"{safe_int(
+                    main_result.get('모바일 검색량')
+                ):,}"
+            ),
         )
 
         metric3.metric(
             "🔢 총 검색량",
-            f"{safe_int(main_result.get('총 검색량')):,}",
+            (
+                f"{safe_int(
+                    main_result.get('총 검색량')
+                ):,}"
+            ),
         )
 
         metric4.metric(
@@ -2103,7 +2171,11 @@ if active_tab == "📊 키워드 분석":
 
         metric5.metric(
             "🖱️ PC 평균클릭수",
-            f"{safe_float(main_result.get('PC 평균클릭수')):,.1f}",
+            (
+                f"{safe_float(
+                    main_result.get('PC 평균클릭수')
+                ):,.1f}"
+            ),
         )
 
         if main_result.get("검색량 추정"):
@@ -2111,173 +2183,225 @@ if active_tab == "📊 키워드 분석":
                 "※ '<10'으로 제공된 검색량은 "
                 "계산 편의를 위해 5로 추정했습니다."
             )
-        category_summary = (
+
+        category_info_map = (
             st.session_state.get(
-                "analysis_category_summary"
+                "analysis_category_info_map"
             )
             or {}
         )
 
-        category_error = (
+        main_keyword_info = (
+            category_info_map.get(
+                stored_analysis_keyword,
+                {},
+            )
+        )
+
+        if not main_keyword_info:
+            normalized_main_keyword = (
+                normalize_keyword_for_compare(
+                    stored_analysis_keyword
+                )
+            )
+
+            for (
+                saved_keyword,
+                saved_info,
+            ) in category_info_map.items():
+                if (
+                    normalize_keyword_for_compare(
+                        saved_keyword
+                    )
+                    == normalized_main_keyword
+                ):
+                    main_keyword_info = saved_info
+                    break
+
+        main_category = (
+            main_keyword_info.get(
+                "대표 카테고리",
+                "확인 불가",
+            )
+        )
+
+        main_keyword_type = (
+            main_keyword_info.get(
+                "키워드 유형",
+                "판단 불가",
+            )
+        )
+
+        st.info(
+            f"🗂️ 대표 카테고리: "
+            f"**{main_category}**\n\n"
+            f"🔍 키워드 유형: "
+            f"**{main_keyword_type}**"
+        )
+
+        st.caption(
+            "키워드 유형과 비율은 "
+            "네이버쇼핑 검색 결과와 키워드 패턴을 "
+            "이용한 추정값입니다."
+        )
+
+        category_errors = (
             st.session_state.get(
-                "analysis_category_error"
+                "analysis_category_errors"
             )
+            or []
         )
+
+        if category_errors:
+            with st.expander(
+                f"⚠️ 카테고리를 확인하지 못한 키워드 "
+                f"{len(category_errors)}개"
+            ):
+                for category_error in (
+                    category_errors[:30]
+                ):
+                    st.caption(category_error)
+
+                if len(category_errors) > 30:
+                    st.caption(
+                        f"그 외 "
+                        f"{len(category_errors) - 30}개"
+                    )
 
         st.divider()
 
-        st.markdown(
-            "### 🗂️ 네이버쇼핑 카테고리 분석"
-        )
-
-        if category_error:
-            st.warning(category_error)
-
-        if category_summary:
-            category_col1, category_col2, category_col3 = (
-                st.columns(3)
-            )
-
-            representative_category1 = (
-                category_summary.get(
-                    "대분류",
-                    "",
-                )
-                or "-"
-            )
-
-            representative_detail = (
-                category_summary.get(
-                    "세분류",
-                    "",
-                )
-                or category_summary.get(
-                    "소분류",
-                    "",
-                )
-                or category_summary.get(
-                    "중분류",
-                    "",
-                )
-                or "-"
-            )
-
-            representative_ratio = safe_float(
-                category_summary.get(
-                    "대표 카테고리 비중"
-                )
-            )
-
-            category_col1.metric(
-                "대표 대분류",
-                representative_category1,
-            )
-
-            category_col2.metric(
-                "대표 상세 카테고리",
-                representative_detail,
-            )
-
-            category_col3.metric(
-                "대표 카테고리 비중",
-                f"{representative_ratio:.1f}%",
-            )
-
-            representative_path = str(
-                category_summary.get(
-                    "대표 카테고리",
-                    "-",
-                )
-            )
-
-            analyzed_product_count = safe_int(
-                category_summary.get(
-                    "분석 상품수"
-                )
-            )
-
-            st.info(
-                f"대표 카테고리: "
-                f"**{representative_path}**"
-            )
-
-            st.caption(
-                f"네이버쇼핑 검색결과 "
-                f"{analyzed_product_count:,}개 상품의 "
-                "카테고리를 집계한 결과입니다."
-            )
-
-            category_distribution = (
-                category_summary.get(
-                    "카테고리 분포",
-                    [],
-                )
-                or []
-            )
-
-            if category_distribution:
-                category_df = pd.DataFrame(
-                    category_distribution
-                )
-
-                st.dataframe(
-                    category_df,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "상품수":
-                            st.column_config.NumberColumn(
-                                "상품수",
-                                format="%d개",
-                            ),
-                        "비중(%)":
-                            st.column_config.ProgressColumn(
-                                "비중",
-                                min_value=0,
-                                max_value=100,
-                                format="%.1f%%",
-                            ),
-                    },
-                )
-
-                category_csv = (
-                    category_df
-                    .to_csv(index=False)
-                    .encode("utf-8-sig")
-                )
-
-                st.download_button(
-                    "📥 카테고리 분석 CSV 다운로드",
-                    data=category_csv,
-                    file_name=(
-                        f"{stored_analysis_keyword}_카테고리분석_"
-                        f"{now_kst().strftime('%Y%m%d')}.csv"
-                    ),
-                    mime="text/csv",
-                    use_container_width=True,
-                )
-
-        elif not category_error:
-            st.info(
-                "표시할 쇼핑 카테고리 정보가 없습니다."
-            )
-
-        st.divider()
         st.markdown(
             "### 🔗 연관 키워드"
         )
 
         keyword_df = pd.DataFrame(
             keyword_results
-        ).sort_values(
-            "총 검색량",
-            ascending=False,
         )
+
+        if "총 검색량" in keyword_df.columns:
+            keyword_df = (
+                keyword_df.sort_values(
+                    "총 검색량",
+                    ascending=False,
+                )
+                .reset_index(drop=True)
+            )
+
+        if "키워드" in keyword_df.columns:
+            def get_saved_keyword_info(
+                keyword_value: Any,
+            ) -> dict[str, str]:
+                clean_keyword = str(
+                    keyword_value or ""
+                ).strip()
+
+                direct_result = (
+                    category_info_map.get(
+                        clean_keyword
+                    )
+                )
+
+                if direct_result:
+                    return direct_result
+
+                normalized_keyword = (
+                    normalize_keyword_for_compare(
+                        clean_keyword
+                    )
+                )
+
+                for (
+                    saved_keyword,
+                    saved_info,
+                ) in category_info_map.items():
+                    if (
+                        normalize_keyword_for_compare(
+                            saved_keyword
+                        )
+                        == normalized_keyword
+                    ):
+                        return saved_info
+
+                return {
+                    "대표 카테고리":
+                        "확인 불가",
+                    "키워드 유형":
+                        "판단 불가",
+                }
+
+            keyword_information = (
+                keyword_df["키워드"]
+                .apply(get_saved_keyword_info)
+            )
+
+            category_values = (
+                keyword_information.apply(
+                    lambda info: info.get(
+                        "대표 카테고리",
+                        "확인 불가",
+                    )
+                )
+            )
+
+            keyword_type_values = (
+                keyword_information.apply(
+                    lambda info: info.get(
+                        "키워드 유형",
+                        "판단 불가",
+                    )
+                )
+            )
+
+            if (
+                "대표 카테고리"
+                in keyword_df.columns
+            ):
+                keyword_df[
+                    "대표 카테고리"
+                ] = category_values
+
+            else:
+                keyword_position = (
+                    keyword_df.columns.get_loc(
+                        "키워드"
+                    )
+                    + 1
+                )
+
+                keyword_df.insert(
+                    keyword_position,
+                    "대표 카테고리",
+                    category_values,
+                )
+
+            if (
+                "키워드 유형"
+                in keyword_df.columns
+            ):
+                keyword_df[
+                    "키워드 유형"
+                ] = keyword_type_values
+
+            else:
+                category_position = (
+                    keyword_df.columns.get_loc(
+                        "대표 카테고리"
+                    )
+                    + 1
+                )
+
+                keyword_df.insert(
+                    category_position,
+                    "키워드 유형",
+                    keyword_type_values,
+                )
 
         display_columns = [
             column
             for column in [
                 "키워드",
+                "대표 카테고리",
+                "키워드 유형",
                 "PC 검색량",
                 "모바일 검색량",
                 "총 검색량",
@@ -2293,8 +2417,35 @@ if active_tab == "📊 키워드 분석":
 
         st.dataframe(
             keyword_df[display_columns],
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
+            column_config={
+                "대표 카테고리":
+                    st.column_config.TextColumn(
+                        "대표 카테고리",
+                        width="large",
+                    ),
+                "키워드 유형":
+                    st.column_config.TextColumn(
+                        "키워드 유형",
+                        width="medium",
+                    ),
+                "PC 검색량":
+                    st.column_config.NumberColumn(
+                        "PC 검색량",
+                        format="%d",
+                    ),
+                "모바일 검색량":
+                    st.column_config.NumberColumn(
+                        "모바일 검색량",
+                        format="%d",
+                    ),
+                "총 검색량":
+                    st.column_config.NumberColumn(
+                        "총 검색량",
+                        format="%d",
+                    ),
+            },
         )
 
         csv_data = (
@@ -2307,12 +2458,14 @@ if active_tab == "📊 키워드 분석":
             "📥 키워드 분석 CSV 다운로드",
             data=csv_data,
             file_name=(
-                f"{stored_analysis_keyword}_키워드분석_"
+                f"{stored_analysis_keyword}_"
+                f"키워드분석_"
                 f"{now_kst().strftime('%Y%m%d')}.csv"
             ),
             mime="text/csv",
-            use_container_width=True,
+            width="stretch",
         )
+
 # =========================================================
 # 10. TAB 4 — 광고 진단 및 시즌
 # =========================================================
