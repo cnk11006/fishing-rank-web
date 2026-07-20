@@ -2038,7 +2038,7 @@ if active_tab == "📊 키워드 분석":
                         client_id=CLIENT_ID,
                         client_secret=CLIENT_SECRET,
                         display=20,
-                        max_workers=8,
+                        max_workers=5,
                     )
 
                 else:
