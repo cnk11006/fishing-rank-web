@@ -1734,6 +1734,21 @@ def get_exact_keyword_volume(
         local_cache[normalized_query] = volume
 
     return volume
+
+
+class ShoppingCategoryRateLimitError(
+    RuntimeError
+):
+    """네이버쇼핑 API 429 제한 오류."""
+    pass
+
+
+@st.cache_data(
+    ttl=3600,
+    show_spinner=False,
+)
+def get_shopping_category_summary(
+    
 @st.cache_data(
     ttl=3600,
     show_spinner=False,
