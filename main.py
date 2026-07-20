@@ -19,7 +19,6 @@ st.set_page_config(
     page_icon="🎣",
 )
 
-
 from fishing_core import (
     MIGRATION_LOG_SHEET,
     MONITOR_SHEET_NAME,
@@ -30,6 +29,7 @@ from fishing_core import (
     delete_monitor_items,
     get_catalog_badge,
     get_keyword_stats_list,
+    get_shopping_category_summary,
     is_our_store_name,
     load_app_secrets,
     load_monitor_keywords,
