@@ -2193,7 +2193,7 @@ def get_keyword_category_info_map(
     client_id: str,
     client_secret: str,
     display: int = 20,
-    max_workers: int = 8,
+    max_workers: int = 5,
 ) -> tuple[
     dict[str, dict[str, str]],
     list[str],
