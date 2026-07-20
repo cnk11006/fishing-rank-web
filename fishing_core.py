@@ -1748,12 +1748,6 @@ class ShoppingCategoryRateLimitError(
     show_spinner=False,
 )
 def get_shopping_category_summary(
-    
-@st.cache_data(
-    ttl=3600,
-    show_spinner=False,
-)
-def get_shopping_category_summary(
     keyword: str,
     client_id: str,
     client_secret: str,
@@ -1762,7 +1756,10 @@ def get_shopping_category_summary(
     keyword = str(keyword or "").strip()
 
     if not keyword:
-        return {}, "카테고리를 조회할 키워드가 없습니다."
+        return (
+            {},
+            "카테고리를 조회할 키워드가 없습니다.",
+        )
 
     display = max(
         1,
@@ -1788,12 +1785,55 @@ def get_shopping_category_summary(
     }
 
     try:
-        response = requests.get(
-            url,
-            headers=headers,
-            params=params,
-            timeout=(5, 20),
-        )
+        response = None
+        max_attempts = 3
+
+        for attempt in range(max_attempts):
+            response = requests.get(
+                url,
+                headers=headers,
+                params=params,
+                timeout=(5, 20),
+            )
+
+            if response.status_code != 429:
+                break
+
+            if attempt < max_attempts - 1:
+                retry_after = safe_float(
+                    response.headers.get(
+                        "Retry-After",
+                        0,
+                    )
+                )
+
+                wait_seconds = (
+                    retry_after
+                    if retry_after > 0
+                    else 0.8 * (2 ** attempt)
+                )
+
+                time.sleep(
+                    min(
+                        max(
+                            wait_seconds,
+                            0.5,
+                        ),
+                        4.0,
+                    )
+                )
+
+        if response is None:
+            return (
+                {},
+                "쇼핑 카테고리 응답이 없습니다.",
+            )
+
+        if response.status_code == 429:
+            raise ShoppingCategoryRateLimitError(
+                "네이버쇼핑 API 요청이 많아 "
+                "잠시 제한되었습니다."
+            )
 
         if response.status_code != 200:
             return (
@@ -1803,16 +1843,26 @@ def get_shopping_category_summary(
             )
 
         response_data = response.json()
-        items = response_data.get("items", [])
+        items = response_data.get(
+            "items",
+            [],
+        )
 
-        if not isinstance(items, list) or not items:
-            return {}, "쇼핑 검색결과가 없어 카테고리를 확인할 수 없습니다."
+        if (
+            not isinstance(items, list)
+            or not items
+        ):
+            return (
+                {},
+                "쇼핑 검색결과가 없어 "
+                "카테고리를 확인할 수 없습니다.",
+            )
 
-        category_paths = []
-        level1_values = []
-        level2_values = []
-        level3_values = []
-        level4_values = []
+        category_paths: list[str] = []
+        level1_values: list[str] = []
+        level2_values: list[str] = []
+        level3_values: list[str] = []
+        level4_values: list[str] = []
 
         for item in items:
             category1 = str(
@@ -1832,35 +1882,49 @@ def get_shopping_category_summary(
             ).strip()
 
             if category1:
-                level1_values.append(category1)
+                level1_values.append(
+                    category1
+                )
 
             if category2:
-                level2_values.append(category2)
+                level2_values.append(
+                    category2
+                )
 
             if category3:
-                level3_values.append(category3)
+                level3_values.append(
+                    category3
+                )
 
             if category4:
-                level4_values.append(category4)
+                level4_values.append(
+                    category4
+                )
 
             category_parts = [
                 value
-                for value in [
+                for value in (
                     category1,
                     category2,
                     category3,
                     category4,
-                ]
+                )
                 if value
             ]
 
             if category_parts:
                 category_paths.append(
-                    " > ".join(category_parts)
+                    " > ".join(
+                        category_parts
+                    )
                 )
 
         if not category_paths:
-            return {}, "쇼핑 검색결과에서 카테고리를 찾지 못했습니다."
+            return (
+                {},
+                "쇼핑 검색결과에서 "
+                "카테고리를 찾지 못했습니다.",
+            )
 
         category_counter = Counter(
             category_paths
@@ -1871,22 +1935,21 @@ def get_shopping_category_summary(
         for category_path, count in (
             category_counter.most_common(10)
         ):
-            category_distribution.append(
-                {
-                    "카테고리": category_path,
-                    "상품수": count,
-                    "비중(%)": round(
-                        count
-                        / len(category_paths)
-                        * 100,
-                        1,
-                    ),
-                }
-            )
+            category_distribution.append({
+                "카테고리": category_path,
+                "상품수": count,
+                "비중(%)": round(
+                    count
+                    / len(category_paths)
+                    * 100,
+                    1,
+                ),
+            })
 
-        representative_category, representative_count = (
-            category_counter.most_common(1)[0]
-        )
+        (
+            representative_category,
+            representative_count,
+        ) = category_counter.most_common(1)[0]
 
         def most_common_value(
             values: list[str],
@@ -1894,47 +1957,72 @@ def get_shopping_category_summary(
             if not values:
                 return ""
 
-            return Counter(values).most_common(1)[0][0]
+            return (
+                Counter(values)
+                .most_common(1)[0][0]
+            )
 
         summary = {
             "키워드": keyword,
-            "대표 카테고리": representative_category,
-            "대분류": most_common_value(level1_values),
-            "중분류": most_common_value(level2_values),
-            "소분류": most_common_value(level3_values),
-            "세분류": most_common_value(level4_values),
-            "분석 상품수": len(category_paths),
-            "대표 카테고리 상품수": (
-                representative_count
-            ),
-            "대표 카테고리 비중": round(
-                representative_count
-                / len(category_paths)
-                * 100,
-                1,
-            ),
-            "카테고리 분포": category_distribution,
+            "대표 카테고리":
+                representative_category,
+            "대분류":
+                most_common_value(
+                    level1_values
+                ),
+            "중분류":
+                most_common_value(
+                    level2_values
+                ),
+            "소분류":
+                most_common_value(
+                    level3_values
+                ),
+            "세분류":
+                most_common_value(
+                    level4_values
+                ),
+            "분석 상품수":
+                len(category_paths),
+            "대표 카테고리 상품수":
+                representative_count,
+            "대표 카테고리 비중":
+                round(
+                    representative_count
+                    / len(category_paths)
+                    * 100,
+                    1,
+                ),
+            "카테고리 분포":
+                category_distribution,
         }
 
         return summary, None
 
+    except ShoppingCategoryRateLimitError:
+        raise
+
     except requests.RequestException as exc:
         return (
             {},
-            f"쇼핑 카테고리 API 연결 오류: {exc}",
+            f"쇼핑 카테고리 API 연결 오류: "
+            f"{exc}",
         )
 
     except ValueError:
         return (
             {},
-            "쇼핑 카테고리 응답을 해석하지 못했습니다.",
+            "쇼핑 카테고리 응답을 "
+            "해석하지 못했습니다.",
         )
 
     except Exception as exc:
         return (
             {},
-            f"쇼핑 카테고리 분석 오류: {exc}",
+            f"쇼핑 카테고리 분석 오류: "
+            f"{exc}",
         )
+        
 def _calculate_keyword_type(
     keyword: str,
     category_summary: dict[str, Any] | None,
