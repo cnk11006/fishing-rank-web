@@ -2164,7 +2164,11 @@ def _calculate_keyword_type(
         term in clean_keyword
         for term in mixed_information_terms
     ):
-        shopping_score -= 15.0
+        shopping_score = min(
+            shopping_score - 50.0,
+            35.0,
+        )
+
 
     shopping_score = round(
         max(
