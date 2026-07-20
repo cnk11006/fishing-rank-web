@@ -8,6 +8,7 @@ import json
 import logging
 import re
 import time
+from collections import Counter
 from datetime import datetime, timedelta
 from typing import Any, Iterable
 from urllib.parse import urlparse
@@ -20,7 +21,6 @@ import streamlit as st
 from google.oauth2.service_account import Credentials
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-
 
 # =========================================================
 # 0. 로깅·시간대·공통 상수
@@ -1733,4 +1733,190 @@ def get_exact_keyword_volume(
         local_cache[normalized_query] = volume
 
     return volume
+@st.cache_data(
+    ttl=3600,
+    show_spinner=False,
+)
+def get_shopping_category_summary(
+    keyword: str,
+    client_id: str,
+    client_secret: str,
+    display: int = 100,
+) -> tuple[dict[str, Any], str | None]:
+    keyword = str(keyword or "").strip()
+
+    if not keyword:
+        return {}, "카테고리를 조회할 키워드가 없습니다."
+
+    display = max(
+        1,
+        min(int(display), 100),
+    )
+
+    url = (
+        "https://openapi.naver.com/"
+        "v1/search/shop.json"
+    )
+
+    headers = {
+        "X-Naver-Client-Id": client_id,
+        "X-Naver-Client-Secret": client_secret,
+    }
+
+    params = {
+        "query": keyword,
+        "display": display,
+        "start": 1,
+        "sort": "sim",
+        "exclude": "used:rental:cbshop",
+    }
+
+    try:
+        response = requests.get(
+            url,
+            headers=headers,
+            params=params,
+            timeout=(5, 20),
+        )
+
+        if response.status_code != 200:
+            return (
+                {},
+                "쇼핑 카테고리 조회 실패: "
+                f"HTTP {response.status_code}",
+            )
+
+        response_data = response.json()
+        items = response_data.get("items", [])
+
+        if not isinstance(items, list) or not items:
+            return {}, "쇼핑 검색결과가 없어 카테고리를 확인할 수 없습니다."
+
+        category_paths = []
+        level1_values = []
+        level2_values = []
+        level3_values = []
+        level4_values = []
+
+        for item in items:
+            category1 = str(
+                item.get("category1", "")
+            ).strip()
+
+            category2 = str(
+                item.get("category2", "")
+            ).strip()
+
+            category3 = str(
+                item.get("category3", "")
+            ).strip()
+
+            category4 = str(
+                item.get("category4", "")
+            ).strip()
+
+            if category1:
+                level1_values.append(category1)
+
+            if category2:
+                level2_values.append(category2)
+
+            if category3:
+                level3_values.append(category3)
+
+            if category4:
+                level4_values.append(category4)
+
+            category_parts = [
+                value
+                for value in [
+                    category1,
+                    category2,
+                    category3,
+                    category4,
+                ]
+                if value
+            ]
+
+            if category_parts:
+                category_paths.append(
+                    " > ".join(category_parts)
+                )
+
+        if not category_paths:
+            return {}, "쇼핑 검색결과에서 카테고리를 찾지 못했습니다."
+
+        category_counter = Counter(
+            category_paths
+        )
+
+        category_distribution = []
+
+        for category_path, count in (
+            category_counter.most_common(10)
+        ):
+            category_distribution.append(
+                {
+                    "카테고리": category_path,
+                    "상품수": count,
+                    "비중(%)": round(
+                        count
+                        / len(category_paths)
+                        * 100,
+                        1,
+                    ),
+                }
+            )
+
+        representative_category, representative_count = (
+            category_counter.most_common(1)[0]
+        )
+
+        def most_common_value(
+            values: list[str],
+        ) -> str:
+            if not values:
+                return ""
+
+            return Counter(values).most_common(1)[0][0]
+
+        summary = {
+            "키워드": keyword,
+            "대표 카테고리": representative_category,
+            "대분류": most_common_value(level1_values),
+            "중분류": most_common_value(level2_values),
+            "소분류": most_common_value(level3_values),
+            "세분류": most_common_value(level4_values),
+            "분석 상품수": len(category_paths),
+            "대표 카테고리 상품수": (
+                representative_count
+            ),
+            "대표 카테고리 비중": round(
+                representative_count
+                / len(category_paths)
+                * 100,
+                1,
+            ),
+            "카테고리 분포": category_distribution,
+        }
+
+        return summary, None
+
+    except requests.RequestException as exc:
+        return (
+            {},
+            f"쇼핑 카테고리 API 연결 오류: {exc}",
+        )
+
+    except ValueError:
+        return (
+            {},
+            "쇼핑 카테고리 응답을 해석하지 못했습니다.",
+        )
+
+    except Exception as exc:
+        return (
+            {},
+            f"쇼핑 카테고리 분석 오류: {exc}",
+        )
 
