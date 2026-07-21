@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.routers.rank import router as rank_router
 from app.routers.monitoring import router as monitoring_router
 from app.routers.keywords import router as keywords_router
+from app.routers.advertising import router as advertising_router
 
 
 settings = get_settings()
@@ -45,6 +46,7 @@ app.include_router(auth_router)
 app.include_router(rank_router)
 app.include_router(monitoring_router)
 app.include_router(keywords_router)
+app.include_router(advertising_router)
 
 
 @app.get("/")

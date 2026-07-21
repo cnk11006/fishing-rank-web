@@ -14,6 +14,7 @@ import {
   collectMonitoringRanks,
   getMonitoringHistory,
   analyzeKeywords,
+  getAdvertisingOverview,
 } from "@/lib/api";
 import type {
   RankSearchResponse,
@@ -21,6 +22,7 @@ import type {
   MonitoringCollectResponse,
   MonitoringHistoryItem,
   KeywordAnalysisResponse,
+  AdvertisingOverviewResponse,
 } from "@/lib/api";
 
 const navigationItems = [
@@ -314,6 +316,8 @@ export default function Home() {
           <MonitoringManager />
         ) : activeNavigation === "keywords" ? (
           <KeywordAnalysis />
+        ) : activeNavigation === "advertising" ? (
+          <AdvertisingDiagnosis />
         ) : (
           <FeaturePreview
             icon={activeItem.icon}
@@ -1302,6 +1306,265 @@ function KeywordAnalysis() {
         </div>
       )}
     </>
+  );
+}
+
+function AdvertisingDiagnosis() {
+  const [result, setResult] =
+    useState<AdvertisingOverviewResponse | null>(
+      null,
+    );
+  const [activeTab, setActiveTab] = useState<
+    "campaigns" | "adgroups"
+  >("campaigns");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  async function loadAdvertising() {
+    setLoading(true);
+    setError("");
+
+    try {
+      const response =
+        await getAdvertisingOverview();
+      setResult(response);
+    } catch (requestError) {
+      setResult(null);
+      setError(
+        requestError instanceof ApiError
+          ? requestError.message
+          : "광고 정보를 불러오지 못했습니다.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadAdvertising();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="empty-state">
+        <span>📢</span>
+        <h3>광고 정보를 불러오는 중입니다.</h3>
+        <p>
+          캠페인과 광고그룹 상태를 확인하고 있습니다.
+        </p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <>
+        <div className="error-message">
+          {error}
+        </div>
+        <button
+          type="button"
+          className="primary-button retry-button"
+          onClick={() => void loadAdvertising()}
+        >
+          다시 불러오기
+        </button>
+      </>
+    );
+  }
+
+  if (!result) {
+    return null;
+  }
+
+  return (
+    <>
+      <div className="advertising-toolbar">
+        <span>
+          마지막 조회 처리시간{" "}
+          {result.elapsed_seconds}초
+        </span>
+
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => void loadAdvertising()}
+        >
+          새로고침
+        </button>
+      </div>
+
+      <div className="metric-grid">
+        <article className="metric-card">
+          <span>전체 캠페인</span>
+          <strong>
+            {result.summary.campaign_count}
+          </strong>
+        </article>
+
+        <article className="metric-card">
+          <span>활성·중지 캠페인</span>
+          <strong>
+            {result.summary.active_campaign_count} ·{" "}
+            {result.summary.paused_campaign_count}
+          </strong>
+        </article>
+
+        <article className="metric-card">
+          <span>전체 광고그룹</span>
+          <strong>
+            {result.summary.adgroup_count}
+          </strong>
+        </article>
+
+        <article className="metric-card">
+          <span>활성·중지 광고그룹</span>
+          <strong>
+            {result.summary.active_adgroup_count} ·{" "}
+            {result.summary.paused_adgroup_count}
+          </strong>
+        </article>
+      </div>
+
+      {result.summary.error_count > 0 && (
+        <div className="error-message">
+          일부 캠페인의 광고그룹을 불러오지
+          못했습니다. 오류{" "}
+          {result.summary.error_count}건
+        </div>
+      )}
+
+      <div className="analysis-tabs">
+        <button
+          type="button"
+          className={
+            activeTab === "campaigns"
+              ? "analysis-tab active"
+              : "analysis-tab"
+          }
+          onClick={() =>
+            setActiveTab("campaigns")
+          }
+        >
+          캠페인
+        </button>
+
+        <button
+          type="button"
+          className={
+            activeTab === "adgroups"
+              ? "analysis-tab active"
+              : "analysis-tab"
+          }
+          onClick={() =>
+            setActiveTab("adgroups")
+          }
+        >
+          광고그룹
+        </button>
+      </div>
+
+      {activeTab === "campaigns" ? (
+        <div className="table-scroll">
+          <table className="result-table">
+            <thead>
+              <tr>
+                <th>캠페인</th>
+                <th>유형</th>
+                <th>상태</th>
+                <th>일예산</th>
+                <th>수정일시</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {result.campaigns.map((campaign) => (
+                <tr key={campaign.campaign_id}>
+                  <td>
+                    <strong>{campaign.name}</strong>
+                  </td>
+                  <td>
+                    {campaign.campaign_type || "-"}
+                  </td>
+                  <td>
+                    <AdvertisingStatus
+                      status={campaign.status}
+                    />
+                  </td>
+                  <td>
+                    {campaign.uses_daily_budget
+                      ? `${campaign.daily_budget
+                          .toLocaleString()}원`
+                      : "제한 없음"}
+                  </td>
+                  <td>
+                    {campaign.edited_at || "-"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="table-scroll">
+          <table className="result-table">
+            <thead>
+              <tr>
+                <th>캠페인</th>
+                <th>광고그룹</th>
+                <th>상태</th>
+                <th>입찰가</th>
+                <th>일예산</th>
+                <th>상태 사유</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {result.adgroups.map((adgroup) => (
+                <tr key={adgroup.adgroup_id}>
+                  <td>{adgroup.campaign_name}</td>
+                  <td>
+                    <strong>{adgroup.name}</strong>
+                  </td>
+                  <td>
+                    <AdvertisingStatus
+                      status={adgroup.status}
+                    />
+                  </td>
+                  <td>
+                    {adgroup.bid_amount
+                      .toLocaleString()}원
+                  </td>
+                  <td>
+                    {adgroup.uses_daily_budget
+                      ? `${adgroup.daily_budget
+                          .toLocaleString()}원`
+                      : "제한 없음"}
+                  </td>
+                  <td>
+                    {adgroup.status_reason || "-"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+}
+
+function AdvertisingStatus({
+  status,
+}: {
+  status: "active" | "paused";
+}) {
+  return (
+    <span
+      className={`advertising-status ${status}`}
+    >
+      {status === "active" ? "활성" : "중지"}
+    </span>
   );
 }
 

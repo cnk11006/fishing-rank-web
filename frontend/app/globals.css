@@ -843,3 +843,36 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+.advertising-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 20px 0 14px;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.advertising-status {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.advertising-status.active {
+  background: #eafaf2;
+  color: #087443;
+}
+
+.advertising-status.paused {
+  background: #f2f4f7;
+  color: #667085;
+}
+
+.retry-button {
+  margin-top: 14px;
+}

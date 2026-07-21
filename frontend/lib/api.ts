@@ -284,3 +284,56 @@ export function analyzeKeywords(
     },
   );
 }
+
+export type AdvertisingCampaign = {
+  campaign_id: string;
+  name: string;
+  campaign_type: string;
+  daily_budget: number;
+  uses_daily_budget: boolean;
+  user_locked: boolean;
+  status: "active" | "paused";
+  registered_at: string;
+  edited_at: string;
+};
+
+export type AdvertisingAdgroup = {
+  adgroup_id: string;
+  campaign_id: string;
+  campaign_name: string;
+  name: string;
+  bid_amount: number;
+  daily_budget: number;
+  uses_daily_budget: boolean;
+  user_locked: boolean;
+  api_status: string;
+  status_reason: string;
+  status: "active" | "paused";
+};
+
+export type AdvertisingOverviewResponse = {
+  summary: {
+    campaign_count: number;
+    active_campaign_count: number;
+    paused_campaign_count: number;
+    adgroup_count: number;
+    active_adgroup_count: number;
+    paused_adgroup_count: number;
+    error_count: number;
+  };
+  campaigns: AdvertisingCampaign[];
+  adgroups: AdvertisingAdgroup[];
+  errors: {
+    campaign_id: string;
+    campaign_name: string;
+    message: string;
+  }[];
+  elapsed_seconds: number;
+};
+
+export function getAdvertisingOverview() {
+  return apiRequest<AdvertisingOverviewResponse>(
+    "/api/advertising/overview",
+  );
+}
+
