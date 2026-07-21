@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.auth import router as auth_router
 from app.config import get_settings
 
 
@@ -24,9 +25,20 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_methods=[
+        "GET",
+        "POST",
+        "PUT",
+        "DELETE",
+        "OPTIONS",
+    ],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+    ],
 )
+
+app.include_router(auth_router)
 
 
 @app.get("/")
@@ -45,9 +57,13 @@ def health_check() -> dict[str, Any]:
         "status": "ok",
         "service": settings.app_name,
         "environment": settings.app_environment,
-        "authentication_ready": settings.authentication_ready,
+        "authentication_ready": (
+            settings.authentication_ready
+        ),
         "external_api_settings_ready": (
             settings.required_api_settings_ready
         ),
-        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "checked_at": datetime.now(
+            timezone.utc
+        ).isoformat(),
     }

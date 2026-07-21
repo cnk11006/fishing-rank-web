@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import os
+
+from dotenv import load_dotenv
 from dataclasses import dataclass
 from functools import lru_cache
+
+
+load_dotenv()
 
 
 def read_environment(name: str, default: str = "") -> str:
