@@ -103,6 +103,7 @@ export default function Home() {
     event: FormEvent<HTMLFormElement>,
   ) {
     event.preventDefault();
+    const loginForm = event.currentTarget;
     setLoginPending(true);
     setLoginMessage("");
 
@@ -114,7 +115,7 @@ export default function Home() {
     try {
       const result = await loginWithPassword(password);
       setAuthenticated(result.authenticated);
-      event.currentTarget.reset();
+      loginForm.reset();
     } catch (error) {
       setAuthenticated(false);
       setLoginMessage(
