@@ -1,7 +1,13 @@
 "use client";
 
 import Image from "next/image";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import {
+  ApiError,
+  getAuthenticationStatus,
+  loginWithPassword,
+  logoutSession,
+} from "@/lib/api";
 
 const navigationItems = [
   {
@@ -51,7 +57,10 @@ const navigationItems = [
 type NavigationId = (typeof navigationItems)[number]["id"];
 
 export default function Home() {
-  const [dashboardPreview, setDashboardPreview] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [checkingAuthentication, setCheckingAuthentication] =
+    useState(true);
+  const [loginPending, setLoginPending] = useState(false);
   const [activeNavigation, setActiveNavigation] =
     useState<NavigationId>("rank");
   const [loginMessage, setLoginMessage] = useState("");
@@ -63,14 +72,93 @@ export default function Home() {
     navigationItems.find((item) => item.id === activeNavigation) ??
     navigationItems[0];
 
-  function handleLogin(event: FormEvent<HTMLFormElement>) {
+  useEffect(() => {
+    let active = true;
+
+    getAuthenticationStatus()
+      .then((result) => {
+        if (active) {
+          setAuthenticated(result.authenticated);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setAuthenticated(false);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setCheckingAuthentication(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function handleLogin(
+    event: FormEvent<HTMLFormElement>,
+  ) {
     event.preventDefault();
-    setLoginMessage(
-      "로그인 API는 다음 백엔드 작업에서 연결됩니다.",
+    setLoginPending(true);
+    setLoginMessage("");
+
+    const formData = new FormData(event.currentTarget);
+    const password = String(
+      formData.get("password") ?? "",
+    );
+
+    try {
+      const result = await loginWithPassword(password);
+      setAuthenticated(result.authenticated);
+      event.currentTarget.reset();
+    } catch (error) {
+      setAuthenticated(false);
+      setLoginMessage(
+        error instanceof ApiError
+          ? error.message
+          : "백엔드 서버에 연결하지 못했습니다.",
+      );
+    } finally {
+      setLoginPending(false);
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      await logoutSession();
+    } finally {
+      setAuthenticated(false);
+      setLoginMessage("");
+    }
+  }
+
+  if (checkingAuthentication) {
+    return (
+      <main className="login-page">
+        <section className="login-card">
+          <div className="login-logo-wrap">
+            <Image
+              src="/logo.png"
+              alt="피싱템 로고"
+              width={110}
+              height={110}
+              className="login-logo"
+              priority
+            />
+          </div>
+          <p className="eyebrow">FISHINGTEM RANK RADAR</p>
+          <h1>접속 상태 확인 중</h1>
+          <p className="login-description">
+            안전한 로그인 상태를 확인하고 있습니다.
+          </p>
+        </section>
+      </main>
     );
   }
 
-  if (!dashboardPreview) {
+  if (!authenticated) {
     return (
       <main className="login-page">
         <section className="login-card">
@@ -99,11 +187,16 @@ export default function Home() {
               type="password"
               placeholder="비밀번호를 입력하세요"
               autoComplete="current-password"
+              disabled={loginPending}
               required
             />
 
-            <button className="primary-button" type="submit">
-              로그인
+            <button
+              className="primary-button"
+              type="submit"
+              disabled={loginPending}
+            >
+              {loginPending ? "로그인 확인 중..." : "로그인"}
             </button>
           </form>
 
@@ -111,18 +204,6 @@ export default function Home() {
             <div className="info-message">{loginMessage}</div>
           )}
 
-          <button
-            type="button"
-            className="preview-button"
-            onClick={() => setDashboardPreview(true)}
-          >
-            개발 중인 대시보드 화면 미리보기
-          </button>
-
-          <p className="preview-warning">
-            현재는 화면 확인 단계입니다. 실제 인증은 Python 백엔드
-            연결 후 활성화됩니다.
-          </p>
         </section>
       </main>
     );
@@ -169,7 +250,7 @@ export default function Home() {
           <button
             type="button"
             className="logout-button"
-            onClick={() => setDashboardPreview(false)}
+            onClick={handleLogout}
           >
             로그아웃
           </button>
