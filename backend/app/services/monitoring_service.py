@@ -1,0 +1,222 @@
+from __future__ import annotations
+
+import threading
+import uuid
+from datetime import datetime
+from typing import Any
+from zoneinfo import ZoneInfo
+
+import gspread
+
+from app.services.google_sheets import (
+    get_spreadsheet,
+    safe_sheet_value,
+)
+
+
+KST = ZoneInfo("Asia/Seoul")
+MONITOR_SHEET_NAME = "📋 모니터링 목록"
+
+MONITOR_HEADERS = [
+    "항목ID",
+    "키워드",
+    "등록일",
+    "메모",
+    "productId",
+    "상품명",
+]
+
+_monitor_lock = threading.Lock()
+
+
+class DuplicateMonitorError(Exception):
+    pass
+
+
+class MonitorSheetError(Exception):
+    pass
+
+
+def get_monitor_worksheet():
+    spreadsheet = get_spreadsheet()
+
+    try:
+        worksheet = spreadsheet.worksheet(
+            MONITOR_SHEET_NAME
+        )
+    except gspread.exceptions.WorksheetNotFound:
+        worksheet = spreadsheet.add_worksheet(
+            title=MONITOR_SHEET_NAME,
+            rows=1000,
+            cols=len(MONITOR_HEADERS),
+        )
+
+    headers = worksheet.row_values(1)
+
+    if not headers:
+        worksheet.update(
+            values=[MONITOR_HEADERS],
+            range_name="A1",
+        )
+    elif headers[:len(MONITOR_HEADERS)] != MONITOR_HEADERS:
+        raise MonitorSheetError(
+            "모니터링 목록 시트의 헤더 구성이 "
+            "기존 프로그램과 다릅니다."
+        )
+
+    return worksheet
+
+
+def read_monitor_items() -> list[dict[str, Any]]:
+    with _monitor_lock:
+        worksheet = get_monitor_worksheet()
+        values = worksheet.get_all_values()
+
+    items: list[dict[str, Any]] = []
+
+    for row_number, row in enumerate(
+        values[1:],
+        start=2,
+    ):
+        padded = row + [""] * (
+            len(MONITOR_HEADERS) - len(row)
+        )
+
+        if not any(
+            str(value).strip()
+            for value in padded
+        ):
+            continue
+
+        items.append({
+            "item_id": padded[0].strip(),
+            "keyword": padded[1].strip(),
+            "registered_at": padded[2].strip(),
+            "memo": padded[3].strip(),
+            "product_id": padded[4].strip(),
+            "product_name": padded[5].strip(),
+            "row_number": row_number,
+        })
+
+    return items
+
+
+def add_monitor_item(
+    keyword: str,
+    memo: str = "",
+    product_id: str = "",
+    product_name: str = "",
+) -> dict[str, Any]:
+    keyword = keyword.strip()
+    memo = memo.strip()
+    product_id = product_id.strip()
+    product_name = product_name.strip()
+
+    if not keyword:
+        raise ValueError(
+            "키워드를 입력해 주세요."
+        )
+
+    with _monitor_lock:
+        worksheet = get_monitor_worksheet()
+        values = worksheet.get_all_values()
+
+        for row in values[1:]:
+            padded = row + [""] * (
+                len(MONITOR_HEADERS) - len(row)
+            )
+
+            existing_keyword = (
+                padded[1].strip().casefold()
+            )
+            existing_product_id = (
+                padded[4].strip()
+            )
+
+            if (
+                existing_keyword
+                == keyword.casefold()
+                and existing_product_id
+                == product_id
+            ):
+                raise DuplicateMonitorError(
+                    "이미 등록된 키워드와 상품입니다."
+                )
+
+        item = {
+            "item_id": uuid.uuid4().hex,
+            "keyword": keyword,
+            "registered_at": datetime.now(
+                KST
+            ).strftime("%Y-%m-%d %H:%M:%S"),
+            "memo": memo,
+            "product_id": product_id,
+            "product_name": product_name,
+        }
+
+        worksheet.append_row(
+            [
+                safe_sheet_value(
+                    item["item_id"]
+                ),
+                safe_sheet_value(
+                    item["keyword"]
+                ),
+                safe_sheet_value(
+                    item["registered_at"]
+                ),
+                safe_sheet_value(
+                    item["memo"]
+                ),
+                safe_sheet_value(
+                    item["product_id"]
+                ),
+                safe_sheet_value(
+                    item["product_name"]
+                ),
+            ],
+            value_input_option="RAW",
+        )
+
+    return item
+
+
+def delete_monitor_items(
+    item_ids: list[str],
+) -> int:
+    normalized_ids = {
+        item_id.strip()
+        for item_id in item_ids
+        if item_id.strip()
+    }
+
+    if not normalized_ids:
+        raise ValueError(
+            "삭제할 항목을 선택해 주세요."
+        )
+
+    with _monitor_lock:
+        worksheet = get_monitor_worksheet()
+        values = worksheet.get_all_values()
+        row_numbers: list[int] = []
+
+        for row_number, row in enumerate(
+            values[1:],
+            start=2,
+        ):
+            item_id = (
+                row[0].strip()
+                if row
+                else ""
+            )
+
+            if item_id in normalized_ids:
+                row_numbers.append(row_number)
+
+        for row_number in sorted(
+            row_numbers,
+            reverse=True,
+        ):
+            worksheet.delete_rows(row_number)
+
+    return len(row_numbers)

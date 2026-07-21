@@ -144,3 +144,49 @@ export function searchRank(
     },
   );
 }
+
+export type MonitorItem = {
+  item_id: string;
+  keyword: string;
+  registered_at: string;
+  memo: string;
+  product_id: string;
+  product_name: string;
+  row_number?: number;
+};
+
+export function getMonitoringList() {
+  return apiRequest<{
+    count: number;
+    items: MonitorItem[];
+  }>("/api/monitoring/list");
+}
+
+export function addMonitoringItem(input: {
+  keyword: string;
+  memo: string;
+  product_id: string;
+  product_name: string;
+}) {
+  return apiRequest<{
+    message: string;
+    item: MonitorItem;
+  }>("/api/monitoring/add", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteMonitoringItems(
+  itemIds: string[],
+) {
+  return apiRequest<{
+    message: string;
+    deleted_count: number;
+  }>("/api/monitoring/delete", {
+    method: "POST",
+    body: JSON.stringify({
+      item_ids: itemIds,
+    }),
+  });
+}

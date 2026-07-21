@@ -8,8 +8,14 @@ import {
   loginWithPassword,
   logoutSession,
   searchRank,
+  getMonitoringList,
+  addMonitoringItem,
+  deleteMonitoringItems,
 } from "@/lib/api";
-import type { RankSearchResponse } from "@/lib/api";
+import type {
+  RankSearchResponse,
+  MonitorItem,
+} from "@/lib/api";
 
 const navigationItems = [
   {
@@ -298,6 +304,8 @@ export default function Home() {
 
         {activeNavigation === "rank" ? (
           <RankSearchPreview />
+        ) : activeNavigation === "monitoring" ? (
+          <MonitoringManager />
         ) : (
           <FeaturePreview
             icon={activeItem.icon}
@@ -522,6 +530,304 @@ function RankSearchPreview() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function MonitoringManager() {
+  const [items, setItems] = useState<MonitorItem[]>([]);
+  const [selectedIds, setSelectedIds] =
+    useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [actionPending, setActionPending] =
+    useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  async function loadItems() {
+    setLoading(true);
+    setError("");
+
+    try {
+      const result = await getMonitoringList();
+      setItems(result.items);
+      setSelectedIds([]);
+    } catch (requestError) {
+      setError(
+        requestError instanceof ApiError
+          ? requestError.message
+          : "모니터링 목록을 불러오지 못했습니다.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadItems();
+  }, []);
+
+  async function handleAdd(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+
+    setActionPending(true);
+    setMessage("");
+    setError("");
+
+    try {
+      const result = await addMonitoringItem({
+        keyword: String(
+          formData.get("keyword") ?? "",
+        ).trim(),
+        memo: String(
+          formData.get("memo") ?? "",
+        ).trim(),
+        product_id: String(
+          formData.get("product_id") ?? "",
+        ).trim(),
+        product_name: String(
+          formData.get("product_name") ?? "",
+        ).trim(),
+      });
+
+      setMessage(result.message);
+      form.reset();
+      await loadItems();
+    } catch (requestError) {
+      setError(
+        requestError instanceof ApiError
+          ? requestError.message
+          : "모니터링 항목을 등록하지 못했습니다.",
+      );
+    } finally {
+      setActionPending(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (selectedIds.length === 0) {
+      setError("삭제할 항목을 선택해 주세요.");
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `선택한 ${selectedIds.length}개 항목을 삭제할까요?`,
+      )
+    ) {
+      return;
+    }
+
+    setActionPending(true);
+    setMessage("");
+    setError("");
+
+    try {
+      const result = await deleteMonitoringItems(
+        selectedIds,
+      );
+      setMessage(result.message);
+      await loadItems();
+    } catch (requestError) {
+      setError(
+        requestError instanceof ApiError
+          ? requestError.message
+          : "모니터링 항목을 삭제하지 못했습니다.",
+      );
+    } finally {
+      setActionPending(false);
+    }
+  }
+
+  function toggleSelection(itemId: string) {
+    setSelectedIds((current) =>
+      current.includes(itemId)
+        ? current.filter((id) => id !== itemId)
+        : [...current, itemId],
+    );
+  }
+
+  function toggleAll() {
+    setSelectedIds((current) =>
+      current.length === items.length
+        ? []
+        : items.map((item) => item.item_id),
+    );
+  }
+
+  return (
+    <>
+      <form
+        className="monitor-form"
+        onSubmit={handleAdd}
+      >
+        <div className="field-group">
+          <label htmlFor="monitor-keyword">
+            키워드
+          </label>
+          <input
+            id="monitor-keyword"
+            name="keyword"
+            placeholder="예: 낚시의자"
+            disabled={actionPending}
+            required
+          />
+        </div>
+
+        <div className="field-group">
+          <label htmlFor="monitor-product-id">
+            productId · 선택
+          </label>
+          <input
+            id="monitor-product-id"
+            name="product_id"
+            placeholder="특정 상품만 추적할 때 입력"
+            disabled={actionPending}
+          />
+        </div>
+
+        <div className="field-group">
+          <label htmlFor="monitor-product-name">
+            상품명 · 선택
+          </label>
+          <input
+            id="monitor-product-name"
+            name="product_name"
+            placeholder="관리용 상품명"
+            disabled={actionPending}
+          />
+        </div>
+
+        <div className="field-group">
+          <label htmlFor="monitor-memo">
+            메모 · 선택
+          </label>
+          <input
+            id="monitor-memo"
+            name="memo"
+            placeholder="관리 메모"
+            disabled={actionPending}
+          />
+        </div>
+
+        <button
+          type="submit"
+          className="primary-button monitor-add-button"
+          disabled={actionPending}
+        >
+          {actionPending
+            ? "처리 중..."
+            : "＋ 모니터링 등록"}
+        </button>
+      </form>
+
+      {message && (
+        <div className="success-message">
+          {message}
+        </div>
+      )}
+
+      {error && (
+        <div className="error-message">
+          {error}
+        </div>
+      )}
+
+      <div className="monitor-toolbar">
+        <strong>
+          등록 항목 {items.length}개
+        </strong>
+
+        <div>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => void loadItems()}
+            disabled={loading || actionPending}
+          >
+            새로고침
+          </button>
+
+          <button
+            type="button"
+            className="logout-button"
+            onClick={() => void handleDelete()}
+            disabled={
+              actionPending ||
+              selectedIds.length === 0
+            }
+          >
+            선택 삭제 ({selectedIds.length})
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="empty-state compact-state">
+          <span>⏳</span>
+          <h3>모니터링 목록을 불러오는 중입니다.</h3>
+        </div>
+      ) : items.length === 0 ? (
+        <div className="empty-state compact-state">
+          <span>📋</span>
+          <h3>등록된 모니터링 항목이 없습니다.</h3>
+        </div>
+      ) : (
+        <div className="table-scroll">
+          <table className="result-table">
+            <thead>
+              <tr>
+                <th>
+                  <input
+                    type="checkbox"
+                    aria-label="전체 선택"
+                    checked={
+                      items.length > 0 &&
+                      selectedIds.length === items.length
+                    }
+                    onChange={toggleAll}
+                  />
+                </th>
+                <th>키워드</th>
+                <th>상품명</th>
+                <th>productId</th>
+                <th>메모</th>
+                <th>등록일</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {items.map((item) => (
+                <tr key={item.item_id}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      aria-label={`${item.keyword} 선택`}
+                      checked={selectedIds.includes(
+                        item.item_id,
+                      )}
+                      onChange={() =>
+                        toggleSelection(item.item_id)
+                      }
+                    />
+                  </td>
+                  <td>
+                    <strong>{item.keyword}</strong>
+                  </td>
+                  <td>{item.product_name || "-"}</td>
+                  <td>{item.product_id || "-"}</td>
+                  <td>{item.memo || "-"}</td>
+                  <td>{item.registered_at || "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </>
