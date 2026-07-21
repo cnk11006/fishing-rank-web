@@ -12,11 +12,13 @@ import {
   addMonitoringItem,
   deleteMonitoringItems,
   collectMonitoringRanks,
+  getMonitoringHistory,
 } from "@/lib/api";
 import type {
   RankSearchResponse,
   MonitorItem,
   MonitoringCollectResponse,
+  MonitoringHistoryItem,
 } from "@/lib/api";
 
 const navigationItems = [
@@ -540,6 +542,9 @@ function RankSearchPreview() {
 
 function MonitoringManager() {
   const [items, setItems] = useState<MonitorItem[]>([]);
+  const [historyById, setHistoryById] = useState<
+    Record<string, MonitoringHistoryItem>
+  >({});
   const [selectedIds, setSelectedIds] =
     useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -556,8 +561,21 @@ function MonitoringManager() {
     setError("");
 
     try {
-      const result = await getMonitoringList();
-      setItems(result.items);
+      const [listResult, historyResult] =
+        await Promise.all([
+          getMonitoringList(),
+          getMonitoringHistory(),
+        ]);
+
+      setItems(listResult.items);
+      setHistoryById(
+        Object.fromEntries(
+          historyResult.items.map((item) => [
+            item.item_id,
+            item,
+          ]),
+        ),
+      );
       setSelectedIds([]);
     } catch (requestError) {
       setError(
@@ -925,6 +943,9 @@ function MonitoringManager() {
                 </th>
                 <th>키워드</th>
                 <th>상품명</th>
+                <th>최신 순위</th>
+                <th>순위 변화</th>
+                <th>마지막 수집</th>
                 <th>productId</th>
                 <th>메모</th>
                 <th>등록일</th>
@@ -932,34 +953,111 @@ function MonitoringManager() {
             </thead>
 
             <tbody>
-              {items.map((item) => (
-                <tr key={item.item_id}>
-                  <td>
-                    <input
-                      type="checkbox"
-                      aria-label={`${item.keyword} 선택`}
-                      checked={selectedIds.includes(
-                        item.item_id,
-                      )}
-                      onChange={() =>
-                        toggleSelection(item.item_id)
-                      }
-                    />
-                  </td>
-                  <td>
-                    <strong>{item.keyword}</strong>
-                  </td>
-                  <td>{item.product_name || "-"}</td>
-                  <td>{item.product_id || "-"}</td>
-                  <td>{item.memo || "-"}</td>
-                  <td>{item.registered_at || "-"}</td>
-                </tr>
-              ))}
+              {items.map((item) => {
+                const history =
+                  historyById[item.item_id];
+
+                return (
+                  <tr key={item.item_id}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        aria-label={`${item.keyword} 선택`}
+                        checked={selectedIds.includes(
+                          item.item_id,
+                        )}
+                        onChange={() =>
+                          toggleSelection(item.item_id)
+                        }
+                      />
+                    </td>
+                    <td>
+                      <strong>{item.keyword}</strong>
+                    </td>
+                    <td>{item.product_name || "-"}</td>
+                    <td>
+                      <strong className="latest-rank">
+                        {history?.latest_rank
+                          ? `${history.latest_rank}위`
+                          : "-"}
+                      </strong>
+                    </td>
+                    <td>
+                      <RankChangeBadge
+                        history={history}
+                      />
+                    </td>
+                    <td>
+                      {history?.latest_collected_at ||
+                        "-"}
+                    </td>
+                    <td>{item.product_id || "-"}</td>
+                    <td>{item.memo || "-"}</td>
+                    <td>{item.registered_at || "-"}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
     </>
+  );
+}
+
+function RankChangeBadge({
+  history,
+}: {
+  history?: MonitoringHistoryItem;
+}) {
+  if (!history) {
+    return <span className="rank-change none">-</span>;
+  }
+
+  if (history.status === "up") {
+    return (
+      <span className="rank-change up">
+        ▲ {history.rank_change}
+      </span>
+    );
+  }
+
+  if (history.status === "down") {
+    return (
+      <span className="rank-change down">
+        ▼ {Math.abs(history.rank_change ?? 0)}
+      </span>
+    );
+  }
+
+  if (history.status === "same") {
+    return (
+      <span className="rank-change same">
+        － 변동 없음
+      </span>
+    );
+  }
+
+  if (history.status === "first") {
+    return (
+      <span className="rank-change first">
+        첫 기록
+      </span>
+    );
+  }
+
+  if (history.status === "not_exposed") {
+    return (
+      <span className="rank-change hidden">
+        미노출
+      </span>
+    );
+  }
+
+  return (
+    <span className="rank-change none">
+      기록 없음
+    </span>
   );
 }
 

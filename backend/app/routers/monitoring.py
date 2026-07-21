@@ -7,6 +7,10 @@ from app.dependencies import (
 from app.services.monitoring_collect_service import (
     collect_monitoring_ranks,
 )
+from app.services.monitoring_history_service import (
+    RankHistoryError,
+    calculate_monitoring_history,
+)
 from app.services.monitoring_service import (
     DuplicateMonitorError,
     MonitorSheetError,
@@ -132,6 +136,16 @@ def collect_monitoring():
     try:
         return collect_monitoring_ranks()
     except MonitorSheetError as error:
+        raise HTTPException(
+            status_code=500,
+            detail=str(error),
+        ) from error
+
+@router.get("/history")
+def monitoring_history():
+    try:
+        return calculate_monitoring_history()
+    except (MonitorSheetError, RankHistoryError) as error:
         raise HTTPException(
             status_code=500,
             detail=str(error),

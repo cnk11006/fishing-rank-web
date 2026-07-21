@@ -217,3 +217,27 @@ export function collectMonitoringRanks() {
     },
   );
 }
+
+export type MonitoringHistoryItem = MonitorItem & {
+  latest_rank: number | null;
+  previous_rank: number | null;
+  rank_change: number | null;
+  latest_collected_at: string | null;
+  previous_collected_at: string | null;
+  status:
+    | "no_history"
+    | "not_exposed"
+    | "first"
+    | "up"
+    | "down"
+    | "same";
+  message: string;
+};
+
+export function getMonitoringHistory() {
+  return apiRequest<{
+    count: number;
+    history_row_count: number;
+    items: MonitoringHistoryItem[];
+  }>("/api/monitoring/history");
+}
