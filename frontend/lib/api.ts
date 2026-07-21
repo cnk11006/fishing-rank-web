@@ -337,3 +337,61 @@ export function getAdvertisingOverview() {
   );
 }
 
+
+
+export type SeasonMonthlyItem = {
+  period: string;
+  month: number;
+  month_name: string;
+  season: string;
+  ratio: number;
+  is_partial: boolean;
+};
+
+export type SeasonAnalysisResponse = {
+  keyword: string;
+  months: number;
+  cached: boolean;
+  summary: {
+    pc_volume: number;
+    mobile_volume: number;
+    total_volume: number;
+    current_ratio: number;
+    current_period: string;
+    current_is_partial: boolean;
+    latest_complete_ratio: number;
+    latest_complete_period: string;
+    peak_ratio: number;
+    peak_period: string;
+    peak_month: number;
+    strongest_season: string;
+    trend_status: "rising" | "falling" | "stable";
+    trend_label: string;
+    trend_change: number;
+    preparation_month: number;
+    recommendation: string;
+  };
+  season_scores: {
+    season: string;
+    average_ratio: number;
+    sample_count: number;
+  }[];
+  monthly: SeasonMonthlyItem[];
+  elapsed_seconds: number;
+};
+
+export function analyzeSeason(
+  keyword: string,
+  months: 12 | 24 | 36,
+) {
+  return apiRequest<SeasonAnalysisResponse>(
+    "/api/advertising/season",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        keyword,
+        months,
+      }),
+    },
+  );
+}

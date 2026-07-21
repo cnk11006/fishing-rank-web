@@ -15,6 +15,7 @@ import {
   getMonitoringHistory,
   analyzeKeywords,
   getAdvertisingOverview,
+  analyzeSeason,
 } from "@/lib/api";
 import type {
   RankSearchResponse,
@@ -23,6 +24,7 @@ import type {
   MonitoringHistoryItem,
   KeywordAnalysisResponse,
   AdvertisingOverviewResponse,
+  SeasonAnalysisResponse,
 } from "@/lib/api";
 
 const navigationItems = [
@@ -1315,7 +1317,7 @@ function AdvertisingDiagnosis() {
       null,
     );
   const [activeTab, setActiveTab] = useState<
-    "campaigns" | "adgroups"
+    "campaigns" | "adgroups" | "season"
   >("campaigns");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1462,6 +1464,20 @@ function AdvertisingDiagnosis() {
         >
           광고그룹
         </button>
+
+        <button
+          type="button"
+          className={
+            activeTab === "season"
+              ? "analysis-tab active"
+              : "analysis-tab"
+          }
+          onClick={() =>
+            setActiveTab("season")
+          }
+        >
+          시즌 분석
+        </button>
       </div>
 
       {activeTab === "campaigns" ? (
@@ -1505,7 +1521,7 @@ function AdvertisingDiagnosis() {
             </tbody>
           </table>
         </div>
-      ) : (
+      ) : activeTab === "adgroups" ? (
         <div className="table-scroll">
           <table className="result-table">
             <thead>
@@ -1549,8 +1565,261 @@ function AdvertisingDiagnosis() {
             </tbody>
           </table>
         </div>
+      ) : (
+        <SeasonAnalysisPanel />
       )}
     </>
+  );
+}
+
+
+function SeasonAnalysisPanel() {
+  const [keyword, setKeyword] = useState("");
+  const [months, setMonths] =
+    useState<12 | 24 | 36>(24);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  const [result, setResult] =
+    useState<SeasonAnalysisResponse | null>(null);
+
+  async function handleSeasonAnalysis(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    const normalized = keyword.trim();
+
+    if (!normalized) {
+      setError("시즌을 분석할 키워드를 입력해 주세요.");
+      return;
+    }
+
+    setPending(true);
+    setError("");
+
+    try {
+      const response = await analyzeSeason(
+        normalized,
+        months,
+      );
+      setResult(response);
+    } catch (requestError) {
+      setResult(null);
+      setError(
+        requestError instanceof ApiError
+          ? requestError.message
+          : "시즌 분석 서버에 연결하지 못했습니다.",
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
+  function trendText() {
+    if (!result) {
+      return "-";
+    }
+
+    const change = result.summary.trend_change;
+    const prefix = change > 0 ? "+" : "";
+
+    return `${result.summary.trend_label} ${prefix}${change}`;
+  }
+
+  return (
+    <section className="season-analysis">
+      <form
+        className="season-analysis-form"
+        onSubmit={handleSeasonAnalysis}
+      >
+        <div className="field-group">
+          <label htmlFor="season-keyword">
+            분석 키워드
+          </label>
+          <input
+            id="season-keyword"
+            value={keyword}
+            onChange={(event) =>
+              setKeyword(event.target.value)
+            }
+            placeholder="예: 낚시의자"
+            disabled={pending}
+            required
+          />
+        </div>
+
+        <div className="field-group">
+          <label htmlFor="season-months">
+            분석 기간
+          </label>
+          <select
+            id="season-months"
+            value={months}
+            onChange={(event) =>
+              setMonths(
+                Number(event.target.value) as
+                  | 12
+                  | 24
+                  | 36,
+              )
+            }
+            disabled={pending}
+          >
+            <option value="12">최근 12개월</option>
+            <option value="24">최근 24개월</option>
+            <option value="36">최근 36개월</option>
+          </select>
+        </div>
+
+        <button
+          type="submit"
+          className="primary-button"
+          disabled={pending}
+        >
+          {pending
+            ? "시즌 분석 중..."
+            : "🌊 시즌 분석"}
+        </button>
+      </form>
+
+      {error && (
+        <div className="error-message">
+          {error}
+        </div>
+      )}
+
+      {!result && !pending && (
+        <div className="empty-state compact-state">
+          <span>🌊</span>
+          <h3>월별 검색 수요를 분석합니다.</h3>
+          <p>
+            키워드를 입력하면 강한 계절과 광고 준비
+            시점을 확인할 수 있습니다.
+          </p>
+        </div>
+      )}
+
+      {result && (
+        <>
+          <div className="metric-grid season-metrics">
+            <article className="metric-card">
+              <span>월간 총 검색량</span>
+              <strong>
+                {result.summary.total_volume
+                  .toLocaleString()}
+              </strong>
+            </article>
+
+            <article className="metric-card">
+              <span>최고 수요 월</span>
+              <strong>
+                {result.summary.peak_month}월
+              </strong>
+            </article>
+
+            <article className="metric-card">
+              <span>강한 계절</span>
+              <strong>
+                {result.summary.strongest_season}
+              </strong>
+            </article>
+
+            <article className="metric-card">
+              <span>최근 추세</span>
+              <strong
+                className={
+                  `season-trend ${
+                    result.summary.trend_status
+                  }`
+                }
+              >
+                {trendText()}
+              </strong>
+            </article>
+          </div>
+
+          <div className="season-recommendation">
+            <span>💡 광고 운영 추천</span>
+            <strong>
+              {result.summary.recommendation}
+            </strong>
+            <small>
+              현재 월 데이터는 집계 중일 수 있으며,
+              최고 수요 계산에서는 완료된 월을 사용합니다.
+            </small>
+          </div>
+
+          <div className="season-score-grid">
+            {result.season_scores.map((item) => (
+              <article
+                className="season-score-card"
+                key={item.season}
+              >
+                <span>{item.season}</span>
+                <strong>
+                  {item.average_ratio.toFixed(1)}
+                </strong>
+                <small>
+                  평균 검색지수 · {item.sample_count}개월
+                </small>
+              </article>
+            ))}
+          </div>
+
+          <div className="table-scroll">
+            <table className="result-table season-table">
+              <thead>
+                <tr>
+                  <th>기간</th>
+                  <th>계절</th>
+                  <th>검색 수요</th>
+                  <th>상대 검색지수</th>
+                  <th>상태</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {[...result.monthly]
+                  .reverse()
+                  .map((item) => (
+                    <tr key={item.period}>
+                      <td>
+                        <strong>{item.period}</strong>
+                      </td>
+                      <td>{item.season}</td>
+                      <td>
+                        <div className="season-bar-track">
+                          <span
+                            className="season-bar"
+                            style={{
+                              width: `${
+                                Math.max(item.ratio, 2)
+                              }%`,
+                            }}
+                          />
+                        </div>
+                      </td>
+                      <td>{item.ratio.toFixed(1)}</td>
+                      <td>
+                        {item.is_partial
+                          ? "집계 중"
+                          : "집계 완료"}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+
+          <p className="season-source">
+            네이버 데이터랩 상대 검색지수와 네이버
+            검색광고 월간 검색량을 결합한 결과입니다.
+            처리시간 {result.elapsed_seconds}초
+            {result.cached ? " · 캐시 사용" : ""}
+          </p>
+        </>
+      )}
+    </section>
   );
 }
 

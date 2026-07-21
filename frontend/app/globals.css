@@ -876,3 +876,135 @@ button:disabled {
 .retry-button {
   margin-top: 14px;
 }
+
+
+.season-analysis {
+  margin-top: 4px;
+}
+
+.season-analysis-form {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) 180px auto;
+  align-items: end;
+  gap: 14px;
+  margin: 18px 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-soft);
+  padding: 17px;
+}
+
+.season-metrics {
+  margin-top: 18px;
+}
+
+.season-trend.rising {
+  color: #087443;
+}
+
+.season-trend.falling {
+  color: #c43237;
+}
+
+.season-trend.stable {
+  color: #667085;
+}
+
+.season-recommendation {
+  display: grid;
+  gap: 7px;
+  margin: 18px 0;
+  border: 1px solid #cfe4ff;
+  border-radius: 14px;
+  background: #eef6ff;
+  padding: 17px 19px;
+}
+
+.season-recommendation span {
+  color: #075da8;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.season-recommendation strong {
+  color: #124a78;
+  line-height: 1.55;
+}
+
+.season-recommendation small,
+.season-score-card small,
+.season-source {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.season-score-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.season-score-card {
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: #fff;
+  padding: 16px;
+}
+
+.season-score-card span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.season-score-card strong {
+  font-size: 1.45rem;
+}
+
+.season-table {
+  min-width: 760px;
+}
+
+.season-bar-track {
+  width: 180px;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8eef6;
+}
+
+.season-bar {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    #0a84ff,
+    #45b8ff
+  );
+}
+
+.season-source {
+  margin: 12px 0 0;
+  font-size: 0.78rem;
+}
+
+@media (max-width: 900px) {
+  .season-analysis-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .season-score-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .season-analysis-form,
+  .season-score-grid {
+    grid-template-columns: 1fr;
+  }
+}
