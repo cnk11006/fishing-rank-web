@@ -11,10 +11,12 @@ import {
   getMonitoringList,
   addMonitoringItem,
   deleteMonitoringItems,
+  collectMonitoringRanks,
 } from "@/lib/api";
 import type {
   RankSearchResponse,
   MonitorItem,
+  MonitoringCollectResponse,
 } from "@/lib/api";
 
 const navigationItems = [
@@ -545,6 +547,9 @@ function MonitoringManager() {
     useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [collecting, setCollecting] = useState(false);
+  const [collectResult, setCollectResult] =
+    useState<MonitoringCollectResponse | null>(null);
 
   async function loadItems() {
     setLoading(true);
@@ -642,6 +647,29 @@ function MonitoringManager() {
       );
     } finally {
       setActionPending(false);
+    }
+  }
+
+  async function handleCollect() {
+    setCollecting(true);
+    setMessage("");
+    setError("");
+    setCollectResult(null);
+
+    try {
+      const result = await collectMonitoringRanks();
+      setCollectResult(result);
+      setMessage(
+        `전체 ${result.total_items}개 항목의 순위 수집을 완료했습니다.`,
+      );
+    } catch (requestError) {
+      setError(
+        requestError instanceof ApiError
+          ? requestError.message
+          : "모니터링 순위를 수집하지 못했습니다.",
+      );
+    } finally {
+      setCollecting(false);
     }
   }
 
@@ -747,9 +775,29 @@ function MonitoringManager() {
         <div>
           <button
             type="button"
+            className="primary-button"
+            onClick={() => void handleCollect()}
+            disabled={
+              loading ||
+              actionPending ||
+              collecting ||
+              items.length === 0
+            }
+          >
+            {collecting
+              ? "전체 순위 수집 중..."
+              : "🔄 전체 순위 수집"}
+          </button>
+
+          <button
+            type="button"
             className="secondary-button"
             onClick={() => void loadItems()}
-            disabled={loading || actionPending}
+            disabled={
+              loading ||
+              actionPending ||
+              collecting
+            }
           >
             새로고침
           </button>
@@ -767,6 +815,87 @@ function MonitoringManager() {
           </button>
         </div>
       </div>
+
+      {collectResult && (
+        <section className="collection-result">
+          <div className="metric-grid">
+            <article className="metric-card">
+              <span>전체 항목</span>
+              <strong>
+                {collectResult.total_items}
+              </strong>
+            </article>
+
+            <article className="metric-card">
+              <span>노출·미노출</span>
+              <strong>
+                {collectResult.exposed_count} ·{" "}
+                {collectResult.not_exposed_count}
+              </strong>
+            </article>
+
+            <article className="metric-card">
+              <span>시트 저장</span>
+              <strong>
+                {collectResult.saved_records}건
+              </strong>
+            </article>
+
+            <article className="metric-card">
+              <span>처리시간·오류</span>
+              <strong>
+                {collectResult.elapsed_seconds}초 ·{" "}
+                {collectResult.error_count}건
+              </strong>
+            </article>
+          </div>
+
+          <div className="table-scroll">
+            <table className="result-table collection-table">
+              <thead>
+                <tr>
+                  <th>키워드</th>
+                  <th>추적 상품</th>
+                  <th>최신 순위</th>
+                  <th>상태</th>
+                  <th>검색 결과</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {collectResult.results.map((result) => (
+                  <tr key={result.item_id}>
+                    <td>
+                      <strong>{result.keyword}</strong>
+                    </td>
+                    <td>
+                      {result.product_name ||
+                        "전체 피싱템 상품"}
+                    </td>
+                    <td>
+                      {result.rank
+                        ? `${result.rank}위`
+                        : "-"}
+                    </td>
+                    <td>
+                      <span
+                        className={`collection-status ${result.status}`}
+                      >
+                        {result.status === "exposed"
+                          ? "노출"
+                          : result.status === "not_exposed"
+                            ? "미노출"
+                            : "오류"}
+                      </span>
+                    </td>
+                    <td>{result.message}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {loading ? (
         <div className="empty-state compact-state">

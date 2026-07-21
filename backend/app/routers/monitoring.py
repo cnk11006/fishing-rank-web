@@ -4,6 +4,9 @@ from pydantic import BaseModel, Field, field_validator
 from app.dependencies import (
     require_authenticated_session,
 )
+from app.services.monitoring_collect_service import (
+    collect_monitoring_ranks,
+)
 from app.services.monitoring_service import (
     DuplicateMonitorError,
     MonitorSheetError,
@@ -123,3 +126,14 @@ def delete_monitoring(
             status_code=400,
             detail=str(error),
         ) from error
+
+@router.post("/collect")
+def collect_monitoring():
+    try:
+        return collect_monitoring_ranks()
+    except MonitorSheetError as error:
+        raise HTTPException(
+            status_code=500,
+            detail=str(error),
+        ) from error
+

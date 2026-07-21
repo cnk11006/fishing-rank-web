@@ -723,3 +723,43 @@ button:disabled {
     flex: 1;
   }
 }
+
+.collection-result {
+  margin: 18px 0;
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+}
+
+.collection-table {
+  margin-top: 12px;
+}
+
+.collection-status {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.collection-status.exposed {
+  background: #eafaf2;
+  color: #087443;
+}
+
+.collection-status.not_exposed {
+  background: #fff7e8;
+  color: #9a5b00;
+}
+
+.collection-status.error {
+  background: #fff0f0;
+  color: #b4232a;
+}
+
+@media (max-width: 760px) {
+  .monitor-toolbar > div {
+    flex-wrap: wrap;
+  }
+}

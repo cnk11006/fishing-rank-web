@@ -190,3 +190,30 @@ export function deleteMonitoringItems(
     }),
   });
 }
+
+export type MonitoringCollectItem = MonitorItem & {
+  status: "exposed" | "not_exposed" | "error";
+  rank: number | null;
+  matched_count: number;
+  message: string;
+};
+
+export type MonitoringCollectResponse = {
+  total_items: number;
+  unique_keywords: number;
+  exposed_count: number;
+  not_exposed_count: number;
+  error_count: number;
+  saved_records: number;
+  elapsed_seconds: number;
+  results: MonitoringCollectItem[];
+};
+
+export function collectMonitoringRanks() {
+  return apiRequest<MonitoringCollectResponse>(
+    "/api/monitoring/collect",
+    {
+      method: "POST",
+    },
+  );
+}
