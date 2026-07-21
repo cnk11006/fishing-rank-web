@@ -103,3 +103,44 @@ export function logoutSession() {
     method: "POST",
   });
 }
+
+export type RankSearchItem = {
+  rank: number;
+  title: string;
+  mall_name: string;
+  price: number;
+  link: string;
+  image: string;
+  product_type: number;
+  product_id: string;
+  brand: string;
+  maker: string;
+  categories: string[];
+};
+
+export type RankSearchResponse = {
+  keyword: string;
+  limit: number;
+  total_results: number;
+  fetched_count: number;
+  match_count: number;
+  best_rank: number | null;
+  elapsed_seconds: number;
+  results: RankSearchItem[];
+};
+
+export function searchRank(
+  keyword: string,
+  limit: number,
+) {
+  return apiRequest<RankSearchResponse>(
+    "/api/rank/search",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        keyword,
+        limit,
+      }),
+    },
+  );
+}

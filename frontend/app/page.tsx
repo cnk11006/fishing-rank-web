@@ -7,7 +7,9 @@ import {
   getAuthenticationStatus,
   loginWithPassword,
   logoutSession,
+  searchRank,
 } from "@/lib/api";
+import type { RankSearchResponse } from "@/lib/api";
 
 const navigationItems = [
   {
@@ -311,24 +313,81 @@ export default function Home() {
 }
 
 function RankSearchPreview() {
+  const [keyword, setKeyword] = useState("");
+  const [limit, setLimit] = useState(400);
+  const [searchPending, setSearchPending] =
+    useState(false);
+  const [searchError, setSearchError] = useState("");
+  const [searchResult, setSearchResult] =
+    useState<RankSearchResponse | null>(null);
+
+  async function handleRankSearch(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    const trimmedKeyword = keyword.trim();
+
+    if (!trimmedKeyword) {
+      setSearchError("검색 키워드를 입력해 주세요.");
+      return;
+    }
+
+    setSearchPending(true);
+    setSearchError("");
+
+    try {
+      const result = await searchRank(
+        trimmedKeyword,
+        limit,
+      );
+      setSearchResult(result);
+    } catch (error) {
+      setSearchResult(null);
+      setSearchError(
+        error instanceof ApiError
+          ? error.message
+          : "순위 검색 서버에 연결하지 못했습니다.",
+      );
+    } finally {
+      setSearchPending(false);
+    }
+  }
+
   return (
     <>
       <form
         className="search-panel"
-        onSubmit={(event) => event.preventDefault()}
+        onSubmit={handleRankSearch}
       >
         <div className="field-group">
-          <label htmlFor="rank-keyword">검색 키워드</label>
+          <label htmlFor="rank-keyword">
+            검색 키워드
+          </label>
           <input
             id="rank-keyword"
             type="text"
             placeholder="예: 낚시의자"
+            value={keyword}
+            onChange={(event) =>
+              setKeyword(event.target.value)
+            }
+            disabled={searchPending}
           />
         </div>
 
         <div className="field-group">
-          <label htmlFor="rank-limit">조회 범위</label>
-          <select id="rank-limit" defaultValue="400">
+          <label htmlFor="rank-limit">
+            조회 범위
+          </label>
+          <select
+            id="rank-limit"
+            value={limit}
+            onChange={(event) =>
+              setLimit(Number(event.target.value))
+            }
+            disabled={searchPending}
+          >
             <option value="100">100위까지</option>
             <option value="200">200위까지</option>
             <option value="300">300위까지</option>
@@ -336,37 +395,134 @@ function RankSearchPreview() {
           </select>
         </div>
 
-        <button className="primary-button search-button" type="submit">
-          🔍 순위 검색
+        <button
+          className="primary-button search-button"
+          type="submit"
+          disabled={searchPending}
+        >
+          {searchPending
+            ? "검색 중..."
+            : "🔍 순위 검색"}
         </button>
       </form>
+
+      {searchError && (
+        <div className="error-message">
+          {searchError}
+        </div>
+      )}
 
       <div className="metric-grid">
         <article className="metric-card">
           <span>검색 키워드</span>
-          <strong>-</strong>
+          <strong>
+            {searchResult?.keyword ?? "-"}
+          </strong>
         </article>
+
         <article className="metric-card">
           <span>피싱템 노출 상품</span>
-          <strong>0</strong>
+          <strong>
+            {searchResult?.match_count ?? 0}
+          </strong>
         </article>
+
         <article className="metric-card">
           <span>최고 순위</span>
-          <strong>-</strong>
+          <strong>
+            {searchResult?.best_rank
+              ? `${searchResult.best_rank}위`
+              : "-"}
+          </strong>
         </article>
+
         <article className="metric-card">
-          <span>조회 범위</span>
-          <strong>400위</strong>
+          <span>조회 범위·처리시간</span>
+          <strong>
+            {searchResult
+              ? `${searchResult.limit}위 · ${searchResult.elapsed_seconds}초`
+              : `${limit}위`}
+          </strong>
         </article>
       </div>
 
-      <div className="empty-state">
-        <span>🔎</span>
-        <h3>검색 결과가 여기에 표시됩니다.</h3>
-        <p>
-          실제 순위 검색은 Python 백엔드 API 연결 후 활성화됩니다.
-        </p>
-      </div>
+      {!searchResult ? (
+        <div className="empty-state">
+          <span>🔎</span>
+          <h3>검색 결과가 여기에 표시됩니다.</h3>
+          <p>
+            키워드와 조회 범위를 선택한 후 순위 검색을
+            눌러주세요.
+          </p>
+        </div>
+      ) : searchResult.results.length === 0 ? (
+        <div className="empty-state">
+          <span>📭</span>
+          <h3>
+            조회 범위 안에 피싱템 상품이 없습니다.
+          </h3>
+          <p>
+            네이버쇼핑 상품 {searchResult.fetched_count}개를
+            확인했습니다.
+          </p>
+        </div>
+      ) : (
+        <div className="rank-results">
+          <div className="result-summary">
+            네이버쇼핑 상품{" "}
+            {searchResult.fetched_count.toLocaleString()}개 중
+            피싱템 상품 {searchResult.match_count}개를
+            찾았습니다.
+          </div>
+
+          <div className="table-scroll">
+            <table className="result-table">
+              <thead>
+                <tr>
+                  <th>순위</th>
+                  <th>상품명</th>
+                  <th>판매처</th>
+                  <th>가격</th>
+                  <th>카테고리</th>
+                  <th>링크</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {searchResult.results.map((item) => (
+                  <tr
+                    key={`${item.product_id}-${item.rank}`}
+                  >
+                    <td>
+                      <strong>{item.rank}위</strong>
+                    </td>
+                    <td>{item.title}</td>
+                    <td>{item.mall_name}</td>
+                    <td>
+                      {item.price.toLocaleString()}원
+                    </td>
+                    <td>
+                      {item.categories
+                        .filter(Boolean)
+                        .join(" > ") || "-"}
+                    </td>
+                    <td>
+                      <a
+                        href={item.link}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="product-link"
+                      >
+                        상품 보기
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </>
   );
 }
