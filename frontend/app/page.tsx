@@ -13,12 +13,14 @@ import {
   deleteMonitoringItems,
   collectMonitoringRanks,
   getMonitoringHistory,
+  analyzeKeywords,
 } from "@/lib/api";
 import type {
   RankSearchResponse,
   MonitorItem,
   MonitoringCollectResponse,
   MonitoringHistoryItem,
+  KeywordAnalysisResponse,
 } from "@/lib/api";
 
 const navigationItems = [
@@ -310,6 +312,8 @@ export default function Home() {
           <RankSearchPreview />
         ) : activeNavigation === "monitoring" ? (
           <MonitoringManager />
+        ) : activeNavigation === "keywords" ? (
+          <KeywordAnalysis />
         ) : (
           <FeaturePreview
             icon={activeItem.icon}
@@ -999,6 +1003,302 @@ function MonitoringManager() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+    </>
+  );
+}
+
+function KeywordAnalysis() {
+  const [keyword, setKeyword] = useState("");
+  const [relatedLimit, setRelatedLimit] =
+    useState<10 | 20 | 30>(20);
+  const [activeTab, setActiveTab] = useState<
+    "keywords" | "categories"
+  >("keywords");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  const [result, setResult] =
+    useState<KeywordAnalysisResponse | null>(null);
+
+  async function handleAnalyze(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    const trimmedKeyword = keyword.trim();
+
+    if (!trimmedKeyword) {
+      setError("분석할 키워드를 입력해 주세요.");
+      return;
+    }
+
+    setPending(true);
+    setError("");
+
+    try {
+      const response = await analyzeKeywords(
+        trimmedKeyword,
+        relatedLimit,
+      );
+      setResult(response);
+    } catch (requestError) {
+      setResult(null);
+      setError(
+        requestError instanceof ApiError
+          ? requestError.message
+          : "키워드 분석 서버에 연결하지 못했습니다.",
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
+  function displayVolume(
+    raw: string,
+    value: number,
+  ) {
+    if (
+      raw.replace(/\s/g, "") === "<10" ||
+      raw === "10미만"
+    ) {
+      return "< 10";
+    }
+
+    return value.toLocaleString();
+  }
+
+  return (
+    <>
+      <form
+        className="keyword-analysis-form"
+        onSubmit={handleAnalyze}
+      >
+        <div className="field-group">
+          <label htmlFor="analysis-keyword">
+            분석 키워드
+          </label>
+          <input
+            id="analysis-keyword"
+            value={keyword}
+            onChange={(event) =>
+              setKeyword(event.target.value)
+            }
+            placeholder="예: 낚시의자"
+            disabled={pending}
+          />
+        </div>
+
+        <div className="category-preview">
+          <span>대표 카테고리</span>
+          <strong>
+            {result?.summary
+              .representative_category ||
+              "분석 후 표시됩니다."}
+          </strong>
+        </div>
+
+        <div className="field-group">
+          <label htmlFor="related-limit">
+            연관 키워드
+          </label>
+          <select
+            id="related-limit"
+            value={relatedLimit}
+            onChange={(event) =>
+              setRelatedLimit(
+                Number(event.target.value) as
+                  | 10
+                  | 20
+                  | 30,
+              )
+            }
+            disabled={pending}
+          >
+            <option value="10">10개</option>
+            <option value="20">20개</option>
+            <option value="30">30개</option>
+          </select>
+        </div>
+
+        <button
+          type="submit"
+          className="primary-button"
+          disabled={pending}
+        >
+          {pending
+            ? "키워드 분석 중..."
+            : "📊 키워드 분석"}
+        </button>
+      </form>
+
+      {error && (
+        <div className="error-message">
+          {error}
+        </div>
+      )}
+
+      {result && (
+        <>
+          <div className="metric-grid keyword-metrics">
+            <article className="metric-card">
+              <span>PC 검색량</span>
+              <strong>
+                {displayVolume(
+                  result.summary.pc_volume_raw,
+                  result.summary.pc_volume,
+                )}
+              </strong>
+            </article>
+
+            <article className="metric-card">
+              <span>모바일 검색량</span>
+              <strong>
+                {displayVolume(
+                  result.summary.mobile_volume_raw,
+                  result.summary.mobile_volume,
+                )}
+              </strong>
+            </article>
+
+            <article className="metric-card">
+              <span>총 검색량</span>
+              <strong>
+                {result.summary.total_volume
+                  .toLocaleString()}
+              </strong>
+            </article>
+
+            <article className="metric-card">
+              <span>쇼핑 상품 수·처리시간</span>
+              <strong>
+                {result.summary.product_count
+                  .toLocaleString()}{" "}
+                · {result.elapsed_seconds}초
+              </strong>
+            </article>
+          </div>
+
+          <div className="analysis-tabs">
+            <button
+              type="button"
+              className={
+                activeTab === "keywords"
+                  ? "analysis-tab active"
+                  : "analysis-tab"
+              }
+              onClick={() =>
+                setActiveTab("keywords")
+              }
+            >
+              키워드 분석
+            </button>
+
+            <button
+              type="button"
+              className={
+                activeTab === "categories"
+                  ? "analysis-tab active"
+                  : "analysis-tab"
+              }
+              onClick={() =>
+                setActiveTab("categories")
+              }
+            >
+              Category Analysis
+            </button>
+          </div>
+
+          {activeTab === "keywords" ? (
+            <div className="table-scroll">
+              <table className="result-table">
+                <thead>
+                  <tr>
+                    <th>키워드</th>
+                    <th>PC 검색량</th>
+                    <th>모바일 검색량</th>
+                    <th>총 검색량</th>
+                    <th>쇼핑 상품 수</th>
+                    <th>경쟁도</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {result.keywords.map((item) => (
+                    <tr key={item.keyword}>
+                      <td>
+                        <strong>
+                          {item.keyword}
+                        </strong>
+                      </td>
+                      <td>
+                        {displayVolume(
+                          item.pc_volume_raw,
+                          item.pc_volume,
+                        )}
+                      </td>
+                      <td>
+                        {displayVolume(
+                          item.mobile_volume_raw,
+                          item.mobile_volume,
+                        )}
+                      </td>
+                      <td>
+                        {item.total_volume
+                          .toLocaleString()}
+                      </td>
+                      <td>
+                        {item.product_count
+                          .toLocaleString()}
+                      </td>
+                      <td>
+                        {item.competition || "-"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="table-scroll">
+              <table className="result-table category-table">
+                <thead>
+                  <tr>
+                    <th>키워드</th>
+                    <th>대표 카테고리</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {result.keywords.map((item) => (
+                    <tr key={item.keyword}>
+                      <td>
+                        <strong>
+                          {item.keyword}
+                        </strong>
+                      </td>
+                      <td>
+                        {item.representative_category ||
+                          "-"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {!result && !pending && (
+        <div className="empty-state">
+          <span>📊</span>
+          <h3>
+            검색량과 대표 카테고리를 분석합니다.
+          </h3>
+          <p>
+            키워드를 입력하고 분석 버튼을 눌러주세요.
+          </p>
         </div>
       )}
     </>

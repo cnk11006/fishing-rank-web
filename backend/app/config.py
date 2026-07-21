@@ -25,6 +25,9 @@ class Settings:
     naver_client_secret: str
     google_sheet_id: str
     gcp_service_account_json: str
+    naver_ad_customer_id: str
+    naver_ad_access_license: str
+    naver_ad_secret_key: str
 
     @property
     def cors_origins(self) -> list[str]:
@@ -44,6 +47,16 @@ class Settings:
                 self.naver_client_secret,
                 self.google_sheet_id,
                 self.gcp_service_account_json,
+            )
+        )
+
+    @property
+    def keyword_api_settings_ready(self) -> bool:
+        return all(
+            (
+                self.naver_ad_customer_id,
+                self.naver_ad_access_license,
+                self.naver_ad_secret_key,
             )
         )
 
@@ -79,5 +92,14 @@ def get_settings() -> Settings:
         google_sheet_id=read_environment("GOOGLE_SHEET_ID"),
         gcp_service_account_json=read_environment(
             "GCP_SERVICE_ACCOUNT_JSON"
+        ),
+        naver_ad_customer_id=read_environment(
+            "NAVER_AD_CUSTOMER_ID"
+        ),
+        naver_ad_access_license=read_environment(
+            "NAVER_AD_ACCESS_LICENSE"
+        ),
+        naver_ad_secret_key=read_environment(
+            "NAVER_AD_SECRET_KEY"
         ),
     )

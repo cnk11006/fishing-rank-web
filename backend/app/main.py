@@ -10,6 +10,7 @@ from app.auth import router as auth_router
 from app.config import get_settings
 from app.routers.rank import router as rank_router
 from app.routers.monitoring import router as monitoring_router
+from app.routers.keywords import router as keywords_router
 
 
 settings = get_settings()
@@ -43,6 +44,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(rank_router)
 app.include_router(monitoring_router)
+app.include_router(keywords_router)
 
 
 @app.get("/")
@@ -66,6 +68,9 @@ def health_check() -> dict[str, Any]:
         ),
         "external_api_settings_ready": (
             settings.required_api_settings_ready
+        ),
+        "keyword_api_settings_ready": (
+            settings.keyword_api_settings_ready
         ),
         "checked_at": datetime.now(
             timezone.utc

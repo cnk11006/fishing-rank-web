@@ -241,3 +241,46 @@ export function getMonitoringHistory() {
     items: MonitoringHistoryItem[];
   }>("/api/monitoring/history");
 }
+
+export type KeywordAnalysisItem = {
+  keyword: string;
+  pc_volume: number;
+  pc_volume_raw: string;
+  pc_estimated: boolean;
+  mobile_volume: number;
+  mobile_volume_raw: string;
+  mobile_estimated: boolean;
+  total_volume: number;
+  competition: string;
+  average_pc_clicks: number;
+  average_mobile_clicks: number;
+  product_count: number;
+  representative_category: string;
+  category_sample_count: number;
+  category_cached: boolean;
+};
+
+export type KeywordAnalysisResponse = {
+  keyword: string;
+  related_limit: number;
+  count: number;
+  elapsed_seconds: number;
+  summary: KeywordAnalysisItem;
+  keywords: KeywordAnalysisItem[];
+};
+
+export function analyzeKeywords(
+  keyword: string,
+  relatedLimit: 10 | 20 | 30,
+) {
+  return apiRequest<KeywordAnalysisResponse>(
+    "/api/keywords/analyze",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        keyword,
+        related_limit: relatedLimit,
+      }),
+    },
+  );
+}
