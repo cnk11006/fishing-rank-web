@@ -16,6 +16,7 @@ import {
   analyzeKeywords,
   getAdvertisingOverview,
   analyzeSeason,
+  analyzeCrossPurchase,
 } from "@/lib/api";
 import type {
   RankSearchResponse,
@@ -25,6 +26,7 @@ import type {
   KeywordAnalysisResponse,
   AdvertisingOverviewResponse,
   SeasonAnalysisResponse,
+  CrossPurchaseResponse,
 } from "@/lib/api";
 
 const navigationItems = [
@@ -320,6 +322,8 @@ export default function Home() {
           <KeywordAnalysis />
         ) : activeNavigation === "advertising" ? (
           <AdvertisingDiagnosis />
+        ) : activeNavigation === "cross-purchase" ? (
+          <CrossPurchaseAnalysis />
         ) : (
           <FeaturePreview
             icon={activeItem.icon}
@@ -1308,6 +1312,308 @@ function KeywordAnalysis() {
         </div>
       )}
     </>
+  );
+}
+
+
+function CrossPurchaseAnalysis() {
+  const [files, setFiles] = useState<File[]>([]);
+  const [targetQuery, setTargetQuery] = useState("");
+  const [topN, setTopN] = useState(50);
+  const [minOrders, setMinOrders] = useState(2);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  const [result, setResult] =
+    useState<CrossPurchaseResponse | null>(null);
+
+  async function handleAnalyze(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    if (files.length === 0) {
+      setError("주문내역 엑셀 파일을 선택해 주세요.");
+      return;
+    }
+
+    const normalizedQuery = targetQuery.trim();
+
+    if (!normalizedQuery) {
+      setError("기준 상품명 또는 검색어를 입력해 주세요.");
+      return;
+    }
+
+    setPending(true);
+    setError("");
+
+    try {
+      const response = await analyzeCrossPurchase(
+        files,
+        normalizedQuery,
+        topN,
+        minOrders,
+      );
+      setResult(response);
+    } catch (requestError) {
+      setResult(null);
+      setError(
+        requestError instanceof ApiError
+          ? requestError.message
+          : "교차구매 분석 서버에 연결하지 못했습니다.",
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <section className="cross-purchase-analysis">
+      <div className="privacy-notice">
+        <span>🔒 개인정보 보호</span>
+        <p>
+          주문번호는 상품 묶음을 계산할 때만 사용됩니다.
+          업로드 파일과 주문 정보는 서버나 Google Sheets에
+          저장하지 않습니다.
+        </p>
+      </div>
+
+      <form
+        className="cross-purchase-form"
+        onSubmit={handleAnalyze}
+      >
+        <div className="field-group cross-file-field">
+          <label htmlFor="cross-files">
+            주문내역 Excel 파일
+          </label>
+          <input
+            id="cross-files"
+            type="file"
+            accept=".xlsx,.xls"
+            multiple
+            disabled={pending}
+            onChange={(event) =>
+              setFiles(
+                Array.from(event.target.files ?? []),
+              )
+            }
+          />
+          <small>
+            xlsx·xls 파일, 최대 10개 · 현재{" "}
+            {files.length}개 선택
+          </small>
+        </div>
+
+        <div className="field-group">
+          <label htmlFor="cross-target">
+            기준 상품명 또는 상품번호
+          </label>
+          <input
+            id="cross-target"
+            value={targetQuery}
+            onChange={(event) =>
+              setTargetQuery(event.target.value)
+            }
+            placeholder="예: 타이라바, 메탈지그, 에기"
+            disabled={pending}
+            required
+          />
+        </div>
+
+        <div className="field-group">
+          <label htmlFor="cross-top-n">
+            표시할 연관상품 수
+          </label>
+          <select
+            id="cross-top-n"
+            value={topN}
+            disabled={pending}
+            onChange={(event) =>
+              setTopN(Number(event.target.value))
+            }
+          >
+            <option value="10">10개</option>
+            <option value="20">20개</option>
+            <option value="50">50개</option>
+            <option value="100">100개</option>
+            <option value="200">200개</option>
+          </select>
+        </div>
+
+        <div className="field-group">
+          <label htmlFor="cross-min-orders">
+            최소 동시구매 주문 수
+          </label>
+          <input
+            id="cross-min-orders"
+            type="number"
+            min="1"
+            max="100"
+            value={minOrders}
+            disabled={pending}
+            onChange={(event) =>
+              setMinOrders(
+                Math.max(
+                  1,
+                  Number(event.target.value),
+                ),
+              )
+            }
+          />
+        </div>
+
+        <button
+          type="submit"
+          className="primary-button cross-submit"
+          disabled={pending}
+        >
+          {pending
+            ? "주문내역 분석 중..."
+            : "🔎 교차구매 분석 실행"}
+        </button>
+      </form>
+
+      {error && (
+        <div className="error-message">
+          {error}
+        </div>
+      )}
+
+      {!result && !pending && (
+        <div className="empty-state compact-state">
+          <span>🛒</span>
+          <h3>
+            함께 구매된 상품을 분석합니다.
+          </h3>
+          <p>
+            주문번호·상품명이 포함된 엑셀 파일을
+            선택해 주세요.
+          </p>
+        </div>
+      )}
+
+      {result && (
+        <>
+          <div className="metric-grid cross-metrics">
+            <article className="metric-card">
+              <span>기준 상품</span>
+              <strong>
+                {result.target_query}
+              </strong>
+            </article>
+
+            <article className="metric-card">
+              <span>기준 상품 주문</span>
+              <strong>
+                {result.summary.target_order_count
+                  .toLocaleString()}건
+              </strong>
+            </article>
+
+            <article className="metric-card">
+              <span>연관상품</span>
+              <strong>
+                {result.summary.result_count
+                  .toLocaleString()}개
+              </strong>
+            </article>
+
+            <article className="metric-card">
+              <span>처리 행·시간</span>
+              <strong>
+                {result.summary.order_row_count
+                  .toLocaleString()}행 ·{" "}
+                {result.elapsed_seconds}초
+              </strong>
+            </article>
+          </div>
+
+          {result.file_errors.length > 0 && (
+            <div className="error-message">
+              일부 파일을 읽지 못했습니다.
+              {result.file_errors.map((item) => (
+                <div key={item.file_name}>
+                  {item.file_name}: {item.message}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {result.summary.target_order_count === 0 ? (
+            <div className="empty-state compact-state">
+              <span>📭</span>
+              <h3>
+                기준 상품이 포함된 주문이 없습니다.
+              </h3>
+              <p>
+                상품명 또는 상품번호를 다시 확인해 주세요.
+              </p>
+            </div>
+          ) : result.results.length === 0 ? (
+            <div className="empty-state compact-state">
+              <span>📭</span>
+              <h3>
+                조건에 맞는 연관상품이 없습니다.
+              </h3>
+              <p>
+                최소 동시구매 주문 수를 낮춰보세요.
+              </p>
+            </div>
+          ) : (
+            <div className="table-scroll">
+              <table className="result-table cross-table">
+                <thead>
+                  <tr>
+                    <th>순번</th>
+                    <th>상품번호</th>
+                    <th>함께 산 상품</th>
+                    <th>함께 구매 주문수</th>
+                    <th>동시구매율</th>
+                    <th>우리 제품</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {result.results.map((item, index) => (
+                    <tr
+                      key={
+                        `${item.product_id}-` +
+                        `${item.product_name}`
+                      }
+                    >
+                      <td>{index + 1}</td>
+                      <td>{item.product_id || "-"}</td>
+                      <td>
+                        <strong>
+                          {item.product_name}
+                        </strong>
+                      </td>
+                      <td>
+                        {item.together_order_count
+                          .toLocaleString()}건
+                      </td>
+                      <td>
+                        <strong className="cross-rate">
+                          {item.cross_purchase_rate}%
+                        </strong>
+                      </td>
+                      <td>
+                        {item.is_ours ? (
+                          <span className="our-product-badge">
+                            ✅ 우리 제품
+                          </span>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </section>
   );
 }
 

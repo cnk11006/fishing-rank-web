@@ -1008,3 +1008,104 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+
+.cross-purchase-analysis {
+  margin-top: 4px;
+}
+
+.privacy-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 16px 0;
+  border: 1px solid #cdebdc;
+  border-radius: 13px;
+  background: #effbf5;
+  padding: 14px 17px;
+  color: #087443;
+}
+
+.privacy-notice span {
+  flex: 0 0 auto;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.privacy-notice p {
+  margin: 0;
+  color: #246b50;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.cross-purchase-form {
+  display: grid;
+  grid-template-columns:
+    minmax(260px, 1.3fr)
+    minmax(220px, 1fr)
+    160px
+    160px
+    auto;
+  align-items: end;
+  gap: 14px;
+  margin: 18px 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-soft);
+  padding: 17px;
+}
+
+.cross-file-field small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.cross-file-field input[type="file"] {
+  padding: 9px;
+}
+
+.cross-submit {
+  white-space: nowrap;
+}
+
+.cross-metrics {
+  margin-top: 18px;
+}
+
+.cross-table {
+  min-width: 900px;
+}
+
+.cross-rate {
+  color: var(--primary);
+}
+
+.our-product-badge {
+  display: inline-flex;
+  border-radius: 999px;
+  background: #eafaf2;
+  padding: 5px 9px;
+  color: #087443;
+  font-size: 0.74rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+@media (max-width: 1200px) {
+  .cross-purchase-form {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 650px) {
+  .cross-purchase-form {
+    grid-template-columns: 1fr;
+  }
+
+  .privacy-notice {
+    flex-direction: column;
+  }
+}

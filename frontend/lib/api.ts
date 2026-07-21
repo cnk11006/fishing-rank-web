@@ -395,3 +395,73 @@ export function analyzeSeason(
     },
   );
 }
+
+
+export type CrossPurchaseResultItem = {
+  product_id: string;
+  product_name: string;
+  together_order_count: number;
+  cross_purchase_rate: number;
+  is_ours: boolean;
+};
+
+export type CrossPurchaseResponse = {
+  target_query: string;
+  summary: {
+    uploaded_file_count: number;
+    successful_file_count: number;
+    file_error_count: number;
+    order_row_count: number;
+    target_order_count: number;
+    result_count: number;
+    top_n: number;
+    min_orders: number;
+  };
+  results: CrossPurchaseResultItem[];
+  file_errors: {
+    file_name: string;
+    message: string;
+  }[];
+  elapsed_seconds: number;
+};
+
+export async function analyzeCrossPurchase(
+  files: File[],
+  targetQuery: string,
+  topN: number,
+  minOrders: number,
+) {
+  const formData = new FormData();
+
+  for (const file of files) {
+    formData.append("files", file);
+  }
+
+  formData.append("target_query", targetQuery);
+  formData.append("top_n", String(topN));
+  formData.append("min_orders", String(minOrders));
+
+  const response = await fetch(
+    "/api/cross-purchase/analyze",
+    {
+      method: "POST",
+      credentials: "include",
+      cache: "no-store",
+      body: formData,
+    },
+  );
+
+  let data: ApiPayload = {};
+
+  try {
+    data = await response.json();
+  } catch {
+    data = {};
+  }
+
+  if (!response.ok) {
+    throw new ApiError(response.status, data);
+  }
+
+  return data as CrossPurchaseResponse;
+}
