@@ -465,3 +465,124 @@ export async function analyzeCrossPurchase(
 
   return data as CrossPurchaseResponse;
 }
+
+
+export type CandidateResultItem = {
+  product_id: string;
+  product_name: string;
+  brand: string;
+  maker: string;
+  representative_seller: string;
+  best_rank: number;
+  representative_price: number;
+  category: string;
+  link: string;
+  image: string;
+  search_volume: number;
+  volume_keyword: string;
+  same_product_owned: boolean;
+  product_group_owned: boolean;
+  keywords: string[];
+  observed_seller_count: number;
+  lowest_price: number;
+  highest_price: number;
+  average_price: number;
+  potential_score: number;
+};
+
+export type CandidateAnalysisResponse = {
+  summary: {
+    keyword_count: number;
+    master_product_count: number;
+    candidate_count: number;
+    error_count: number;
+    max_results: number;
+    result_limit: number;
+    min_volume: number;
+  };
+  keywords: string[];
+  results: CandidateResultItem[];
+  errors: {
+    keyword: string;
+    message: string;
+  }[];
+  elapsed_seconds: number;
+};
+
+export type CandidateAnalysisOptions = {
+  maxResults: 100 | 200 | 300 | 400;
+  resultLimit: number;
+  minVolume: number;
+  excludeOwned: boolean;
+  excludeGroup: boolean;
+  excludeUsed: boolean;
+  excludeRental: boolean;
+  excludeOverseas: boolean;
+};
+
+export async function analyzeCandidates(
+  masterFile: File,
+  keywords: string,
+  options: CandidateAnalysisOptions,
+) {
+  const formData = new FormData();
+
+  formData.append("master_file", masterFile);
+  formData.append("keywords", keywords);
+  formData.append(
+    "max_results",
+    String(options.maxResults),
+  );
+  formData.append(
+    "result_limit",
+    String(options.resultLimit),
+  );
+  formData.append(
+    "min_volume",
+    String(options.minVolume),
+  );
+  formData.append(
+    "exclude_owned",
+    String(options.excludeOwned),
+  );
+  formData.append(
+    "exclude_group",
+    String(options.excludeGroup),
+  );
+  formData.append(
+    "exclude_used",
+    String(options.excludeUsed),
+  );
+  formData.append(
+    "exclude_rental",
+    String(options.excludeRental),
+  );
+  formData.append(
+    "exclude_overseas",
+    String(options.excludeOverseas),
+  );
+
+  const response = await fetch(
+    "/api/candidates/analyze",
+    {
+      method: "POST",
+      credentials: "include",
+      cache: "no-store",
+      body: formData,
+    },
+  );
+
+  let data: ApiPayload = {};
+
+  try {
+    data = await response.json();
+  } catch {
+    data = {};
+  }
+
+  if (!response.ok) {
+    throw new ApiError(response.status, data);
+  }
+
+  return data as CandidateAnalysisResponse;
+}

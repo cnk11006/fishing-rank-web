@@ -17,6 +17,7 @@ import {
   getAdvertisingOverview,
   analyzeSeason,
   analyzeCrossPurchase,
+  analyzeCandidates,
 } from "@/lib/api";
 import type {
   RankSearchResponse,
@@ -27,6 +28,7 @@ import type {
   AdvertisingOverviewResponse,
   SeasonAnalysisResponse,
   CrossPurchaseResponse,
+  CandidateAnalysisResponse,
 } from "@/lib/api";
 
 const navigationItems = [
@@ -324,6 +326,8 @@ export default function Home() {
           <AdvertisingDiagnosis />
         ) : activeNavigation === "cross-purchase" ? (
           <CrossPurchaseAnalysis />
+        ) : activeNavigation === "candidates" ? (
+          <CandidateAnalysis />
         ) : (
           <FeaturePreview
             icon={activeItem.icon}
@@ -1315,6 +1319,463 @@ function KeywordAnalysis() {
   );
 }
 
+
+
+function CandidateAnalysis() {
+  const [masterFile, setMasterFile] =
+    useState<File | null>(null);
+  const [keywords, setKeywords] = useState("");
+  const [maxResults, setMaxResults] =
+    useState<100 | 200 | 300 | 400>(100);
+  const [resultLimit, setResultLimit] =
+    useState(100);
+  const [minVolume, setMinVolume] = useState(10);
+  const [excludeOwned, setExcludeOwned] =
+    useState(true);
+  const [excludeGroup, setExcludeGroup] =
+    useState(false);
+  const [excludeUsed, setExcludeUsed] =
+    useState(true);
+  const [excludeRental, setExcludeRental] =
+    useState(true);
+  const [excludeOverseas, setExcludeOverseas] =
+    useState(true);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  const [result, setResult] =
+    useState<CandidateAnalysisResponse | null>(null);
+
+  async function handleAnalyze(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    if (!masterFile) {
+      setError("자사 상품 마스터 Excel 또는 CSV 파일을 선택해 주세요.");
+      return;
+    }
+
+    if (!keywords.trim()) {
+      setError("기준 검색어를 한 개 이상 입력해 주세요.");
+      return;
+    }
+
+    setPending(true);
+    setError("");
+
+    try {
+      const response = await analyzeCandidates(
+        masterFile,
+        keywords,
+        {
+          maxResults,
+          resultLimit,
+          minVolume,
+          excludeOwned,
+          excludeGroup,
+          excludeUsed,
+          excludeRental,
+          excludeOverseas,
+        },
+      );
+      setResult(response);
+    } catch (requestError) {
+      setResult(null);
+      setError(
+        requestError instanceof ApiError
+          ? requestError.message
+          : "사입 후보 분석 서버에 연결하지 못했습니다.",
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <section className="candidate-analysis">
+      <div className="privacy-notice">
+        <span>🔒 상품 마스터 보호</span>
+        <p>
+          업로드한 상품 마스터는 후보 판정에만 사용되며
+          서버와 Google Sheets에 저장하지 않습니다.
+        </p>
+      </div>
+
+      <form
+        className="candidate-form"
+        onSubmit={handleAnalyze}
+      >
+        <div className="candidate-input-grid">
+          <div className="field-group">
+            <label htmlFor="candidate-keywords">
+              기준 검색어
+            </label>
+            <textarea
+              id="candidate-keywords"
+              value={keywords}
+              onChange={(event) =>
+                setKeywords(event.target.value)
+              }
+              placeholder={
+                "검색어를 한 줄에 하나씩 입력하세요.\n" +
+                "예: 낚시의자\n타이라바\n메탈지그"
+              }
+              disabled={pending}
+              required
+            />
+          </div>
+
+          <div className="field-group">
+            <label htmlFor="candidate-master">
+              자사 상품 마스터 Excel
+            </label>
+            <input
+              id="candidate-master"
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              disabled={pending}
+              onChange={(event) =>
+                setMasterFile(
+                  event.target.files?.[0] ?? null,
+                )
+              }
+            />
+            <small className="field-help">
+              상품명 필수 · 상품번호·브랜드 권장
+            </small>
+          </div>
+        </div>
+
+        <div className="candidate-option-grid">
+          <div className="field-group">
+            <label htmlFor="candidate-max-results">
+              검색어별 수집 상품
+            </label>
+            <select
+              id="candidate-max-results"
+              value={maxResults}
+              disabled={pending}
+              onChange={(event) =>
+                setMaxResults(
+                  Number(event.target.value) as
+                    | 100
+                    | 200
+                    | 300
+                    | 400,
+                )
+              }
+            >
+              <option value="100">100개</option>
+              <option value="200">200개</option>
+              <option value="300">300개</option>
+              <option value="400">400개</option>
+            </select>
+          </div>
+
+          <div className="field-group">
+            <label htmlFor="candidate-limit">
+              최종 후보 표시 수
+            </label>
+            <select
+              id="candidate-limit"
+              value={resultLimit}
+              disabled={pending}
+              onChange={(event) =>
+                setResultLimit(
+                  Number(event.target.value),
+                )
+              }
+            >
+              <option value="10">10개</option>
+              <option value="50">50개</option>
+              <option value="100">100개</option>
+              <option value="200">200개</option>
+              <option value="500">500개</option>
+            </select>
+          </div>
+
+          <div className="field-group">
+            <label htmlFor="candidate-min-volume">
+              최소 월간 검색량
+            </label>
+            <input
+              id="candidate-min-volume"
+              type="number"
+              min="0"
+              max="1000000"
+              value={minVolume}
+              disabled={pending}
+              onChange={(event) =>
+                setMinVolume(
+                  Math.max(
+                    0,
+                    Number(event.target.value),
+                  ),
+                )
+              }
+            />
+          </div>
+        </div>
+
+        <div className="candidate-check-grid">
+          <label>
+            <input
+              type="checkbox"
+              checked={excludeOwned}
+              disabled={pending}
+              onChange={(event) =>
+                setExcludeOwned(event.target.checked)
+              }
+            />
+            자사 동일상품 제외
+          </label>
+
+          <label>
+            <input
+              type="checkbox"
+              checked={excludeGroup}
+              disabled={pending}
+              onChange={(event) =>
+                setExcludeGroup(event.target.checked)
+              }
+            />
+            동일제품군 제외
+          </label>
+
+          <label>
+            <input
+              type="checkbox"
+              checked={excludeUsed}
+              disabled={pending}
+              onChange={(event) =>
+                setExcludeUsed(event.target.checked)
+              }
+            />
+            중고상품 제외
+          </label>
+
+          <label>
+            <input
+              type="checkbox"
+              checked={excludeRental}
+              disabled={pending}
+              onChange={(event) =>
+                setExcludeRental(event.target.checked)
+              }
+            />
+            렌탈상품 제외
+          </label>
+
+          <label>
+            <input
+              type="checkbox"
+              checked={excludeOverseas}
+              disabled={pending}
+              onChange={(event) =>
+                setExcludeOverseas(event.target.checked)
+              }
+            />
+            해외직구 제외
+          </label>
+        </div>
+
+        <button
+          type="submit"
+          className="primary-button candidate-submit"
+          disabled={pending}
+        >
+          {pending
+            ? "네이버쇼핑 후보 분석 중..."
+            : "🚀 사입 후보 분석 실행"}
+        </button>
+      </form>
+
+      {error && (
+        <div className="error-message">
+          {error}
+        </div>
+      )}
+
+      {!result && !pending && (
+        <div className="empty-state compact-state">
+          <span>🎯</span>
+          <h3>미취급 사입 후보를 찾습니다.</h3>
+          <p>
+            검색어와 상품 마스터를 입력해 주세요.
+          </p>
+        </div>
+      )}
+
+      {result && (
+        <>
+          <div className="metric-grid candidate-metrics">
+            <article className="metric-card">
+              <span>분석 검색어</span>
+              <strong>
+                {result.summary.keyword_count}개
+              </strong>
+            </article>
+
+            <article className="metric-card">
+              <span>자사 상품</span>
+              <strong>
+                {result.summary.master_product_count
+                  .toLocaleString()}개
+              </strong>
+            </article>
+
+            <article className="metric-card">
+              <span>발견 후보</span>
+              <strong>
+                {result.summary.candidate_count
+                  .toLocaleString()}개
+              </strong>
+            </article>
+
+            <article className="metric-card">
+              <span>처리시간·오류</span>
+              <strong>
+                {result.elapsed_seconds}초 ·{" "}
+                {result.summary.error_count}건
+              </strong>
+            </article>
+          </div>
+
+          {result.errors.length > 0 && (
+            <div className="error-message">
+              {result.errors.map((item) => (
+                <div key={item.keyword}>
+                  {item.keyword}: {item.message}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {result.results.length === 0 ? (
+            <div className="empty-state compact-state">
+              <span>📭</span>
+              <h3>조건에 맞는 후보가 없습니다.</h3>
+              <p>
+                최소 검색량을 낮추거나 제외 조건을
+                해제해 보세요.
+              </p>
+            </div>
+          ) : (
+            <div className="table-scroll">
+              <table className="result-table candidate-table">
+                <thead>
+                  <tr>
+                    <th>점수</th>
+                    <th>상품명</th>
+                    <th>최고순위</th>
+                    <th>월간 검색량</th>
+                    <th>대표가격</th>
+                    <th>판매처</th>
+                    <th>자사 취급</th>
+                    <th>카테고리</th>
+                    <th>링크</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {result.results.map((item) => (
+                    <tr
+                      key={
+                        item.product_id ||
+                        item.product_name
+                      }
+                    >
+                      <td>
+                        <strong className="candidate-score">
+                          {item.potential_score
+                            .toLocaleString()}
+                        </strong>
+                      </td>
+                      <td>
+                        <strong>
+                          {item.product_name}
+                        </strong>
+                        <div className="candidate-subtext">
+                          {item.brand ||
+                            item.maker ||
+                            "브랜드 정보 없음"}
+                        </div>
+                      </td>
+                      <td>{item.best_rank}위</td>
+                      <td>
+                        {item.search_volume
+                          .toLocaleString()}
+                        <div className="candidate-subtext">
+                          기준: {item.volume_keyword}
+                        </div>
+                      </td>
+                      <td>
+                        {item.representative_price
+                          .toLocaleString()}원
+                      </td>
+                      <td>
+                        {item.representative_seller ||
+                          "-"}
+                      </td>
+                      <td>
+                        <div className="candidate-badges">
+                          <span
+                            className={
+                              item.same_product_owned
+                                ? "candidate-badge owned"
+                                : "candidate-badge new"
+                            }
+                          >
+                            {item.same_product_owned
+                              ? "동일상품 있음"
+                              : "🆕 동일상품 없음"}
+                          </span>
+                          <span
+                            className={
+                              item.product_group_owned
+                                ? "candidate-badge owned"
+                                : "candidate-badge new"
+                            }
+                          >
+                            {item.product_group_owned
+                              ? "취급 제품군"
+                              : "🆕 미취급군"}
+                          </span>
+                        </div>
+                      </td>
+                      <td>{item.category || "-"}</td>
+                      <td>
+                        {item.link ? (
+                          <a
+                            href={item.link}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="product-link"
+                          >
+                            상품 보기
+                          </a>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div className="candidate-guide">
+            잠재력 점수는 월간 검색량, 최고 노출순위,
+            검색 결과에서 관측된 판매처 수를 기준으로
+            계산합니다. 실제 사입 전 도매가격·마진·MOQ와
+            배송비를 별도로 확인하세요.
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
 
 function CrossPurchaseAnalysis() {
   const [files, setFiles] = useState<File[]>([]);
