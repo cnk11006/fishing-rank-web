@@ -16,8 +16,10 @@ import {
   saveSelectedRankItems,
   getMonitoringList,
   addMonitoringItem,
+  updateMonitoringItem,
   deleteMonitoringItems,
   collectMonitoringRanks,
+  collectSelectedMonitoringRanks,
   getMonitoringHistory,
   analyzeKeywords,
   getAdvertisingOverview,
@@ -1070,6 +1072,8 @@ function MonitoringManager() {
     >("rank_asc");
   const [expandedIds, setExpandedIds] =
     useState<string[]>([]);
+  const [editingItem, setEditingItem] =
+    useState<MonitorItem | null>(null);
 
   async function loadItems(
     resetSelection = true,
@@ -1189,20 +1193,34 @@ function MonitoringManager() {
     }
   }
 
-  async function handleCollect() {
+  async function handleCollect(
+    itemIds?: string[],
+  ) {
+    if (itemIds && itemIds.length === 0) {
+      setError(
+        "순위를 수집할 항목을 선택해 주세요.",
+      );
+      return;
+    }
+
     setCollecting(true);
     setMessage("");
     setError("");
     setCollectResult(null);
 
     try {
-      const result =
-        await collectMonitoringRanks();
+      const result = itemIds
+        ? await collectSelectedMonitoringRanks(
+            itemIds,
+          )
+        : await collectMonitoringRanks();
 
       setCollectResult(result);
       await loadItems(false);
       setMessage(
-        `전체 ${result.total_items}개 항목의 순위 수집을 완료했습니다.`,
+        itemIds
+          ? `선택한 ${result.total_items}개 항목의 순위 수집을 완료했습니다.`
+          : `전체 ${result.total_items}개 항목의 순위 수집을 완료했습니다.`,
       );
     } catch (requestError) {
       setError(
@@ -1212,6 +1230,55 @@ function MonitoringManager() {
       );
     } finally {
       setCollecting(false);
+    }
+  }
+
+  async function handleUpdate(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    if (!editingItem) {
+      return;
+    }
+
+    const formData = new FormData(
+      event.currentTarget,
+    );
+
+    setActionPending(true);
+    setMessage("");
+    setError("");
+
+    try {
+      const result =
+        await updateMonitoringItem({
+          item_id: editingItem.item_id,
+          keyword: String(
+            formData.get("keyword") ?? "",
+          ).trim(),
+          memo: String(
+            formData.get("memo") ?? "",
+          ).trim(),
+          product_id: String(
+            formData.get("product_id") ?? "",
+          ).trim(),
+          product_name: String(
+            formData.get("product_name") ?? "",
+          ).trim(),
+        });
+
+      await loadItems(false);
+      setEditingItem(null);
+      setMessage(result.message);
+    } catch (requestError) {
+      setError(
+        requestError instanceof ApiError
+          ? requestError.message
+          : "모니터링 항목을 수정하지 못했습니다.",
+      );
+    } finally {
+      setActionPending(false);
     }
   }
 
@@ -1528,6 +1595,121 @@ function MonitoringManager() {
         </button>
       </form>
 
+      {editingItem && (
+        <form
+          id="monitoring-edit-form"
+          className="monitoring-edit-form"
+          onSubmit={handleUpdate}
+          style={{
+            margin: "18px 0",
+            padding: "18px",
+            border: "2px solid #bfdbfe",
+            borderRadius: "14px",
+            background: "#eff6ff",
+            display: "grid",
+            gap: "14px",
+          }}
+        >
+          <div>
+            <strong>
+              ✏️ 모니터링 항목 수정
+            </strong>
+            <p
+              style={{
+                margin: "5px 0 0",
+              }}
+            >
+              등록일과 항목 ID는 그대로 유지됩니다.
+            </p>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(210px, 1fr))",
+              gap: "12px",
+            }}
+          >
+            <label>
+              키워드
+              <input
+                name="keyword"
+                type="text"
+                defaultValue={
+                  editingItem.keyword
+                }
+                disabled={actionPending}
+                required
+              />
+            </label>
+
+            <label>
+              메모
+              <input
+                name="memo"
+                type="text"
+                defaultValue={editingItem.memo}
+                disabled={actionPending}
+              />
+            </label>
+
+            <label>
+              productId
+              <input
+                name="product_id"
+                type="text"
+                defaultValue={
+                  editingItem.product_id
+                }
+                disabled={actionPending}
+              />
+            </label>
+
+            <label>
+              상품명
+              <input
+                name="product_name"
+                type="text"
+                defaultValue={
+                  editingItem.product_name
+                }
+                disabled={actionPending}
+              />
+            </label>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              gap: "10px",
+              flexWrap: "wrap",
+            }}
+          >
+            <button
+              type="submit"
+              className="primary-button"
+              disabled={actionPending}
+            >
+              {actionPending
+                ? "수정 저장 중..."
+                : "수정 내용 저장"}
+            </button>
+
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() =>
+                setEditingItem(null)
+              }
+              disabled={actionPending}
+            >
+              취소
+            </button>
+          </div>
+        </form>
+      )}
+
       {message && (
         <div className="success-message">
           {message}
@@ -1656,6 +1838,24 @@ function MonitoringManager() {
         <button
           type="button"
           className="primary-button"
+          onClick={() =>
+            void handleCollect(selectedIds)
+          }
+          disabled={
+            loading ||
+            actionPending ||
+            collecting ||
+            selectedIds.length === 0
+          }
+        >
+          {collecting
+            ? "순위 수집 중..."
+            : `🎯 선택 ${selectedIds.length}개 수집`}
+        </button>
+
+        <button
+          type="button"
+          className="secondary-button"
           onClick={() => void handleCollect()}
           disabled={
             loading ||
@@ -1665,7 +1865,7 @@ function MonitoringManager() {
           }
         >
           {collecting
-            ? "전체 순위 수집 중..."
+            ? "순위 수집 중..."
             : "🔄 전체 순위 수집"}
         </button>
 
@@ -1789,6 +1989,7 @@ function MonitoringManager() {
                 <th>마지막 수집</th>
                 <th>메모</th>
                 <th>등록일</th>
+                <th>관리</th>
               </tr>
             </thead>
 
@@ -2018,6 +2219,34 @@ function MonitoringManager() {
                     <td>
                       {item.registered_at || "-"}
                     </td>
+
+                    <td>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => {
+                          setEditingItem(item);
+
+                          window.setTimeout(() => {
+                            document
+                              .getElementById(
+                                "monitoring-edit-form",
+                              )
+                              ?.scrollIntoView({
+                                behavior: "smooth",
+                                block: "center",
+                              });
+                          }, 0);
+                        }}
+                        disabled={actionPending}
+                        style={{
+                          padding: "6px 10px",
+                          minHeight: "auto",
+                        }}
+                      >
+                        수정
+                      </button>
+                    </td>
                   </tr>
 
                   {expanded && (
@@ -2025,7 +2254,7 @@ function MonitoringManager() {
                       key={`${item.item_id}-history`}
                     >
                       <td
-                        colSpan={8}
+                        colSpan={9}
                         style={{
                           background: "#f8fafc",
                           padding: "16px",

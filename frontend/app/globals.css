@@ -1537,3 +1537,52 @@ button:disabled {
     flex-direction: column;
   }
 }
+
+
+/* Monitoring field spacing */
+.monitoring-add-form label,
+.monitoring-edit-form label {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.monitoring-add-form input,
+.monitoring-edit-form input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.monitoring-add-form input:focus,
+.monitoring-edit-form input:focus {
+  border-color: #0a84ff;
+  outline: 3px solid rgba(10, 132, 255, 0.14);
+}
+
+.monitoring-edit-form {
+  scroll-margin-top: 24px;
+}
+
+.monitoring-edit-form > div:nth-of-type(2) {
+  align-items: start;
+}
+
+@media (max-width: 700px) {
+  .monitoring-add-form,
+  .monitoring-edit-form {
+    grid-template-columns: 1fr !important;
+  }
+}

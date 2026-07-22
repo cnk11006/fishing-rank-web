@@ -58,9 +58,31 @@ def match_monitor_results(
     return list(search_results)
 
 
-def collect_monitoring_ranks() -> dict[str, Any]:
+def collect_monitoring_ranks(
+    item_ids: list[str] | None = None,
+) -> dict[str, Any]:
     started_at = time.perf_counter()
     monitors = read_monitor_items()
+
+    if item_ids is not None:
+        normalized_ids = {
+            str(item_id).strip()
+            for item_id in item_ids
+            if str(item_id).strip()
+        }
+
+        if not normalized_ids:
+            raise ValueError(
+                "수집할 모니터링 항목을 선택해 주세요."
+            )
+
+        monitors = [
+            monitor
+            for monitor in monitors
+            if str(
+                monitor.get("item_id") or ""
+            ).strip() in normalized_ids
+        ]
 
     if not monitors:
         return {

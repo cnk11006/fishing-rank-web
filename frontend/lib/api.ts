@@ -223,6 +223,22 @@ export function addMonitoringItem(input: {
   });
 }
 
+export function updateMonitoringItem(input: {
+  item_id: string;
+  keyword: string;
+  memo: string;
+  product_id: string;
+  product_name: string;
+}) {
+  return apiRequest<{
+    message: string;
+    item: MonitorItem;
+  }>("/api/monitoring/update", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export function deleteMonitoringItems(
   itemIds: string[],
 ) {
@@ -260,6 +276,20 @@ export function collectMonitoringRanks() {
     "/api/monitoring/collect",
     {
       method: "POST",
+    },
+  );
+}
+
+export function collectSelectedMonitoringRanks(
+  itemIds: string[],
+) {
+  return apiRequest<MonitoringCollectResponse>(
+    "/api/monitoring/collect-selected",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        item_ids: itemIds,
+      }),
     },
   );
 }

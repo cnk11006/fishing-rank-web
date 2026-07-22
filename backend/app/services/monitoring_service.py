@@ -222,6 +222,92 @@ def delete_monitor_items(
     return len(row_numbers)
 
 
+def update_monitor_item(
+    item_id: str,
+    keyword: str,
+    memo: str = "",
+    product_id: str = "",
+    product_name: str = "",
+) -> dict[str, Any]:
+    item_id = item_id.strip()
+    keyword = keyword.strip()
+    memo = memo.strip()
+    product_id = product_id.strip()
+    product_name = product_name.strip()
+
+    if not item_id:
+        raise ValueError(
+            "수정할 항목 ID가 없습니다."
+        )
+
+    if not keyword:
+        raise ValueError(
+            "키워드를 입력해 주세요."
+        )
+
+    with _monitor_lock:
+        worksheet = get_monitor_worksheet()
+        values = worksheet.get_all_values()
+
+        target_row_number: int | None = None
+        registered_at = ""
+
+        for row_number, row in enumerate(
+            values[1:],
+            start=2,
+        ):
+            padded = row + [""] * (
+                len(MONITOR_HEADERS) - len(row)
+            )
+            existing_item_id = padded[0].strip()
+
+            if existing_item_id == item_id:
+                target_row_number = row_number
+                registered_at = padded[2].strip()
+                continue
+
+            if (
+                padded[1].strip().casefold()
+                == keyword.casefold()
+                and padded[4].strip()
+                == product_id
+            ):
+                raise DuplicateMonitorError(
+                    "이미 등록된 키워드와 상품입니다."
+                )
+
+        if target_row_number is None:
+            raise ValueError(
+                "수정할 모니터링 항목을 찾지 못했습니다."
+            )
+
+        updated_item = {
+            "item_id": item_id,
+            "keyword": keyword,
+            "registered_at": registered_at,
+            "memo": memo,
+            "product_id": product_id,
+            "product_name": product_name,
+        }
+
+        worksheet.update(
+            values=[[
+                safe_sheet_value(item_id),
+                safe_sheet_value(keyword),
+                safe_sheet_value(registered_at),
+                safe_sheet_value(memo),
+                safe_sheet_value(product_id),
+                safe_sheet_value(product_name),
+            ]],
+            range_name=(
+                f"A{target_row_number}:"
+                f"F{target_row_number}"
+            ),
+        )
+
+    return updated_item
+
+
 def add_monitor_items_bulk(
     items: list[dict[str, Any]],
 ) -> dict[str, Any]:

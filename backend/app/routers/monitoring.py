@@ -17,6 +17,7 @@ from app.services.monitoring_service import (
     add_monitor_item,
     delete_monitor_items,
     read_monitor_items,
+    update_monitor_item,
 )
 
 
@@ -59,6 +60,47 @@ class MonitorAddRequest(BaseModel):
 
 
 class MonitorDeleteRequest(BaseModel):
+    item_ids: list[str] = Field(
+        min_length=1,
+        max_length=100,
+    )
+
+
+class MonitorUpdateRequest(BaseModel):
+    item_id: str = Field(
+        min_length=1,
+        max_length=100,
+    )
+    keyword: str = Field(
+        min_length=1,
+        max_length=100,
+    )
+    memo: str = Field(
+        default="",
+        max_length=500,
+    )
+    product_id: str = Field(
+        default="",
+        max_length=100,
+    )
+    product_name: str = Field(
+        default="",
+        max_length=300,
+    )
+
+    @field_validator(
+        "item_id",
+        "keyword",
+        "memo",
+        "product_id",
+        "product_name",
+    )
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        return value.strip()
+
+
+class MonitorCollectSelectedRequest(BaseModel):
     item_ids: list[str] = Field(
         min_length=1,
         max_length=100,
@@ -131,15 +173,65 @@ def delete_monitoring(
             detail=str(error),
         ) from error
 
+@router.post("/update")
+def update_monitoring(
+    request: MonitorUpdateRequest,
+):
+    try:
+        item = update_monitor_item(
+            item_id=request.item_id,
+            keyword=request.keyword,
+            memo=request.memo,
+            product_id=request.product_id,
+            product_name=request.product_name,
+        )
+
+        return {
+            "message": "모니터링 항목을 수정했습니다.",
+            "item": item,
+        }
+    except DuplicateMonitorError as error:
+        raise HTTPException(
+            status_code=409,
+            detail=str(error),
+        ) from error
+    except (ValueError, MonitorSheetError) as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        ) from error
+
+
 @router.post("/collect")
 def collect_monitoring():
     try:
         return collect_monitoring_ranks()
+    except (ValueError, MonitorSheetError) as error:
+        raise HTTPException(
+            status_code=500,
+            detail=str(error),
+        ) from error
+
+
+@router.post("/collect-selected")
+def collect_selected_monitoring(
+    request: MonitorCollectSelectedRequest,
+):
+    try:
+        return collect_monitoring_ranks(
+            item_ids=request.item_ids,
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        ) from error
     except MonitorSheetError as error:
         raise HTTPException(
             status_code=500,
             detail=str(error),
         ) from error
+
 
 @router.get("/history")
 def monitoring_history():
