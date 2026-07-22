@@ -593,9 +593,13 @@ export type DataManagementOverview = {
     rank_record_count: number;
     monitor_count: number;
     legacy_sheet_count: number;
+    migrated_legacy_sheet_count: number;
+    pending_legacy_sheet_count: number;
     latest_collected_at: string;
   };
   legacy_sheets: string[];
+  migrated_legacy_sheets: string[];
+  pending_legacy_sheets: string[];
   worksheets: {
     title: string;
     is_system: boolean;

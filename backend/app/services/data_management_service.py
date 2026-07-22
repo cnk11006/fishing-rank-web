@@ -119,8 +119,12 @@ def _get_migration_log_worksheet():
     return worksheet
 
 
-def _migrated_sheet_names() -> set[str]:
-    worksheet = _get_migration_log_worksheet()
+def _migrated_sheet_names(
+    worksheet=None,
+) -> set[str]:
+    if worksheet is None:
+        worksheet = _get_migration_log_worksheet()
+
     values = worksheet.get_all_values()
     migrated: set[str] = set()
 
@@ -333,6 +337,32 @@ def _load_data_overview() -> dict[str, Any]:
             )
         ]
 
+        migration_log_worksheet = next(
+            (
+                worksheet
+                for worksheet in worksheets
+                if worksheet.title == MIGRATION_LOG_SHEET
+            ),
+            None,
+        )
+        migrated_names = (
+            _migrated_sheet_names(
+                migration_log_worksheet
+            )
+            if migration_log_worksheet is not None
+            else set()
+        )
+        migrated_legacy_sheets = [
+            title
+            for title in legacy_sheets
+            if title in migrated_names
+        ]
+        pending_legacy_sheets = [
+            title
+            for title in legacy_sheets
+            if title not in migrated_names
+        ]
+
         settings = get_settings()
 
         return {
@@ -341,9 +371,21 @@ def _load_data_overview() -> dict[str, Any]:
                 "rank_record_count": rank_count,
                 "monitor_count": len(monitor_items),
                 "legacy_sheet_count": len(legacy_sheets),
+                "migrated_legacy_sheet_count": len(
+                    migrated_legacy_sheets
+                ),
+                "pending_legacy_sheet_count": len(
+                    pending_legacy_sheets
+                ),
                 "latest_collected_at": latest_collected_at,
             },
             "legacy_sheets": legacy_sheets,
+            "migrated_legacy_sheets": (
+                migrated_legacy_sheets
+            ),
+            "pending_legacy_sheets": (
+                pending_legacy_sheets
+            ),
             "worksheets": [
                 {
                     "title": worksheet.title,

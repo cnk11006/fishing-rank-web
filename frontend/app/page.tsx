@@ -2880,9 +2880,15 @@ function DataManagement() {
           </article>
 
           <article className="metric-card">
-            <span>기존 순위시트</span>
+            <span>원본 / 완료 / 대기</span>
             <strong>
               {overview.summary.legacy_sheet_count
+                .toLocaleString()} /{" "}
+              {overview.summary
+                .migrated_legacy_sheet_count
+                .toLocaleString()} /{" "}
+              {overview.summary
+                .pending_legacy_sheet_count
                 .toLocaleString()}개
             </strong>
           </article>
@@ -2947,11 +2953,11 @@ function DataManagement() {
           </p>
 
           {overview &&
-            overview.legacy_sheets.length > 0 && (
+            overview.migrated_legacy_sheets.length > 0 && (
               <div className="legacy-sheet-list">
-                <strong>통합 대상 워크시트</strong>
+                <strong>✅ 통합 완료·원본 보존</strong>
                 <div>
-                  {overview.legacy_sheets.map(
+                  {overview.migrated_legacy_sheets.map(
                     (sheet) => (
                       <span key={sheet}>{sheet}</span>
                     ),
@@ -2961,9 +2967,24 @@ function DataManagement() {
             )}
 
           {overview &&
-            overview.legacy_sheets.length === 0 && (
+            overview.pending_legacy_sheets.length > 0 && (
+              <div className="legacy-sheet-list">
+                <strong>⏳ 통합 대기 워크시트</strong>
+                <div>
+                  {overview.pending_legacy_sheets.map(
+                    (sheet) => (
+                      <span key={sheet}>{sheet}</span>
+                    ),
+                  )}
+                </div>
+              </div>
+            )}
+
+          {overview &&
+            overview.pending_legacy_sheets.length === 0 && (
               <div className="success-message">
-                통합할 기존 순위시트가 없습니다.
+                모든 기존 순위시트가 통합되었습니다.
+                원본 시트는 안전하게 보존되어 있습니다.
               </div>
             )}
 
@@ -3011,7 +3032,7 @@ function DataManagement() {
               confirmationText.trim() !==
                 "통합 실행" ||
               !overview ||
-              overview.legacy_sheets.length === 0
+              overview.pending_legacy_sheets.length === 0
             }
             onClick={() => void handleMigration()}
           >
