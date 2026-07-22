@@ -157,14 +157,34 @@ def _is_legacy_rank_worksheet(worksheet) -> bool:
     return has_rank and has_date
 
 
+def _rank_content_key(
+    row: list[Any],
+) -> tuple[str, str, int, str, str]:
+    padded = list(row) + [""] * len(RANK_HEADERS)
+
+    return (
+        str(padded[1]).strip(),
+        str(padded[2]).strip().casefold(),
+        _safe_int(padded[3]),
+        str(padded[4]).strip().casefold(),
+        str(padded[10]).strip(),
+    )
+
+
 def _convert_legacy_rows(
     worksheet,
     existing_ids: set[str],
+    existing_content_keys: (
+        set[tuple[str, str, int, str, str]] | None
+    ) = None,
 ) -> list[list[Any]]:
     values = worksheet.get_all_values()
 
     if len(values) < 2:
         return []
+
+    if existing_content_keys is None:
+        existing_content_keys = set()
 
     headers = [
         str(value).strip()
@@ -227,11 +247,6 @@ def _convert_legacy_rows(
             product_id,
         )
 
-        if record_id in existing_ids:
-            continue
-
-        existing_ids.add(record_id)
-
         output = [
             record_id,
             collected_at,
@@ -239,10 +254,23 @@ def _convert_legacy_rows(
             rank,
             _get_value(row, indexes, "상품명", "제품명"),
             _get_value(row, indexes, "판매처", "쇼핑몰"),
-            _safe_int(_get_value(row, indexes, "가격", "최저가")),
+            _safe_int(
+                _get_value(
+                    row,
+                    indexes,
+                    "가격",
+                    "최저가",
+                )
+            ),
             _get_value(row, indexes, "링크", "상품링크"),
             _get_value(row, indexes, "썸네일", "이미지"),
-            _safe_int(_get_value(row, indexes, "productType")),
+            _safe_int(
+                _get_value(
+                    row,
+                    indexes,
+                    "productType",
+                )
+            ),
             product_id,
             _get_value(row, indexes, "브랜드"),
             _get_value(row, indexes, "제조사"),
@@ -252,13 +280,23 @@ def _convert_legacy_rows(
             _get_value(row, indexes, "카테고리4"),
         ]
 
+        content_key = _rank_content_key(output)
+
+        if (
+            record_id in existing_ids
+            or content_key in existing_content_keys
+        ):
+            continue
+
+        existing_ids.add(record_id)
+        existing_content_keys.add(content_key)
+
         converted.append([
             safe_sheet_value(value)
             for value in output
         ])
 
     return converted
-
 
 def _load_data_overview() -> dict[str, Any]:
     try:
@@ -414,6 +452,11 @@ def migrate_legacy_rank_sheets() -> dict[str, Any]:
             for row in target_values[1:]
             if row and row[0].strip()
         }
+        existing_content_keys = {
+            _rank_content_key(row)
+            for row in target_values[1:]
+            if row
+        }
 
         results: list[dict[str, Any]] = []
         total_count = 0
@@ -440,6 +483,7 @@ def migrate_legacy_rank_sheets() -> dict[str, Any]:
                 rows = _convert_legacy_rows(
                     worksheet,
                     existing_ids,
+                    existing_content_keys,
                 )
 
                 if rows:
