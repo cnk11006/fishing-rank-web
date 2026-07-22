@@ -109,6 +109,7 @@ export type RankSearchItem = {
   title: string;
   mall_name: string;
   price: number;
+  highest_price: number;
   link: string;
   image: string;
   product_type: number;
@@ -116,22 +117,49 @@ export type RankSearchItem = {
   brand: string;
   maker: string;
   categories: string[];
+  is_catalog: boolean;
+  catalog_badge: string;
 };
 
 export type RankSearchResponse = {
   keyword: string;
   limit: number;
+  include_special_products: boolean;
+  searched_at: string;
   total_results: number;
   fetched_count: number;
   match_count: number;
   best_rank: number | null;
+  top10_price_summary: {
+    count: number;
+    lowest: number;
+    average: number;
+    highest: number;
+    our_average: number;
+    difference_percent: number | null;
+  };
+  market_top10: RankSearchItem[];
+  warnings: string[];
+  partial_success: boolean;
   elapsed_seconds: number;
   results: RankSearchItem[];
+  save_scheduled: false;
+};
+
+export type SaveSelectedRankResponse = {
+  message: string;
+  saved_count: number;
+  selected_count: number;
+  monitor_added_count: number;
+  monitor_duplicate_count: number;
+  monitor_errors: string[];
+  saved_items: RankSearchItem[];
 };
 
 export function searchRank(
   keyword: string,
   limit: number,
+  includeSpecialProducts: boolean,
 ) {
   return apiRequest<RankSearchResponse>(
     "/api/rank/search",
@@ -140,6 +168,24 @@ export function searchRank(
       body: JSON.stringify({
         keyword,
         limit,
+        include_special_products:
+          includeSpecialProducts,
+      }),
+    },
+  );
+}
+
+export function saveSelectedRankItems(
+  keyword: string,
+  items: RankSearchItem[],
+) {
+  return apiRequest<SaveSelectedRankResponse>(
+    "/api/rank/save-selected",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        keyword,
+        items,
       }),
     },
   );

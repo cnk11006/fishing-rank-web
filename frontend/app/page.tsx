@@ -8,6 +8,7 @@ import {
   loginWithPassword,
   logoutSession,
   searchRank,
+  saveSelectedRankItems,
   getMonitoringList,
   addMonitoringItem,
   deleteMonitoringItems,
@@ -24,6 +25,8 @@ import {
 } from "@/lib/api";
 import type {
   RankSearchResponse,
+  RankSearchItem,
+  SaveSelectedRankResponse,
   MonitorItem,
   MonitoringCollectResponse,
   MonitoringHistoryItem,
@@ -354,11 +357,29 @@ export default function Home() {
 function RankSearchPreview() {
   const [keyword, setKeyword] = useState("");
   const [limit, setLimit] = useState(400);
+  const [
+    includeSpecialProducts,
+    setIncludeSpecialProducts,
+  ] = useState(false);
   const [searchPending, setSearchPending] =
     useState(false);
   const [searchError, setSearchError] = useState("");
   const [searchResult, setSearchResult] =
     useState<RankSearchResponse | null>(null);
+  const [selectedKeys, setSelectedKeys] =
+    useState<string[]>([]);
+  const [savePending, setSavePending] =
+    useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [saveResult, setSaveResult] =
+    useState<SaveSelectedRankResponse | null>(null);
+
+  function itemKey(item: RankSearchItem) {
+    return (
+      item.product_id ||
+      `${item.rank}|${item.title}`
+    );
+  }
 
   async function handleRankSearch(
     event: FormEvent<HTMLFormElement>,
@@ -374,11 +395,15 @@ function RankSearchPreview() {
 
     setSearchPending(true);
     setSearchError("");
+    setSaveError("");
+    setSaveResult(null);
+    setSelectedKeys([]);
 
     try {
       const result = await searchRank(
         trimmedKeyword,
         limit,
+        includeSpecialProducts,
       );
       setSearchResult(result);
     } catch (error) {
@@ -393,10 +418,75 @@ function RankSearchPreview() {
     }
   }
 
+  function toggleItem(item: RankSearchItem) {
+    const key = itemKey(item);
+
+    setSelectedKeys((current) =>
+      current.includes(key)
+        ? current.filter((value) => value !== key)
+        : [...current, key],
+    );
+  }
+
+  function toggleAllItems() {
+    if (!searchResult) {
+      return;
+    }
+
+    const allKeys = searchResult.results.map(itemKey);
+
+    setSelectedKeys((current) =>
+      current.length === allKeys.length
+        ? []
+        : allKeys,
+    );
+  }
+
+  async function handleSaveSelected() {
+    if (!searchResult) {
+      return;
+    }
+
+    const selectedItems =
+      searchResult.results.filter((item) =>
+        selectedKeys.includes(itemKey(item)),
+      );
+
+    if (selectedItems.length === 0) {
+      setSaveError("저장할 상품을 선택해 주세요.");
+      return;
+    }
+
+    setSavePending(true);
+    setSaveError("");
+    setSaveResult(null);
+
+    try {
+      const result = await saveSelectedRankItems(
+        searchResult.keyword,
+        selectedItems,
+      );
+
+      setSaveResult(result);
+      setSelectedKeys([]);
+    } catch (error) {
+      setSaveError(
+        error instanceof ApiError
+          ? error.message
+          : "선택 상품을 저장하지 못했습니다.",
+      );
+    } finally {
+      setSavePending(false);
+    }
+  }
+
+  const priceSummary =
+    searchResult?.top10_price_summary;
+
   return (
     <>
       <form
-        className="search-panel"
+        className="search-panel rank-search-panel"
         onSubmit={handleRankSearch}
       >
         <div className="field-group">
@@ -406,7 +496,7 @@ function RankSearchPreview() {
           <input
             id="rank-keyword"
             type="text"
-            placeholder="예: 낚시의자"
+            placeholder="예: 타이라바 로드"
             value={keyword}
             onChange={(event) =>
               setKeyword(event.target.value)
@@ -434,14 +524,30 @@ function RankSearchPreview() {
           </select>
         </div>
 
+        <label className="rank-special-option">
+          <input
+            type="checkbox"
+            checked={includeSpecialProducts}
+            disabled={searchPending}
+            onChange={(event) =>
+              setIncludeSpecialProducts(
+                event.target.checked,
+              )
+            }
+          />
+          <span>
+            중고·렌탈·해외직구 포함
+          </span>
+        </label>
+
         <button
           className="primary-button search-button"
           type="submit"
           disabled={searchPending}
         >
           {searchPending
-            ? "검색 중..."
-            : "🔍 순위 검색"}
+            ? "정밀 검색 중..."
+            : `🚀 ${limit}위까지 정밀 수색`}
         </button>
       </form>
 
@@ -450,6 +556,15 @@ function RankSearchPreview() {
           {searchError}
         </div>
       )}
+
+      {searchResult?.warnings.map((warning) => (
+        <div
+          className="info-message"
+          key={warning}
+        >
+          ⚠️ {warning}
+        </div>
+      ))}
 
       <div className="metric-grid">
         <article className="metric-card">
@@ -462,7 +577,7 @@ function RankSearchPreview() {
         <article className="metric-card">
           <span>피싱템 노출 상품</span>
           <strong>
-            {searchResult?.match_count ?? 0}
+            {searchResult?.match_count ?? 0}개
           </strong>
         </article>
 
@@ -490,76 +605,344 @@ function RankSearchPreview() {
           <span>🔎</span>
           <h3>검색 결과가 여기에 표시됩니다.</h3>
           <p>
-            키워드와 조회 범위를 선택한 후 순위 검색을
-            눌러주세요.
-          </p>
-        </div>
-      ) : searchResult.results.length === 0 ? (
-        <div className="empty-state">
-          <span>📭</span>
-          <h3>
-            조회 범위 안에 피싱템 상품이 없습니다.
-          </h3>
-          <p>
-            네이버쇼핑 상품 {searchResult.fetched_count}개를
-            확인했습니다.
+            검색만으로는 Google Sheets에 저장되지
+            않습니다.
           </p>
         </div>
       ) : (
         <div className="rank-results">
-          <div className="result-summary">
-            네이버쇼핑 상품{" "}
-            {searchResult.fetched_count.toLocaleString()}개 중
-            피싱템 상품 {searchResult.match_count}개를
-            찾았습니다.
+          <div className="latest-collection-info">
+            검색 키워드:{" "}
+            <strong>{searchResult.keyword}</strong>
+            {" · "}검색 시각:{" "}
+            <strong>{searchResult.searched_at}</strong>
+            {" · "}
+            {searchResult.include_special_products
+              ? "중고·렌탈·해외직구 포함"
+              : "중고·렌탈·해외직구 제외"}
           </div>
 
-          <div className="table-scroll">
-            <table className="result-table">
-              <thead>
-                <tr>
-                  <th>순위</th>
-                  <th>상품명</th>
-                  <th>판매처</th>
-                  <th>가격</th>
-                  <th>카테고리</th>
-                  <th>링크</th>
-                </tr>
-              </thead>
+          {priceSummary &&
+            priceSummary.count > 0 && (
+              <>
+                <h3 className="rank-section-title">
+                  💰 키워드 시장 가격 분석
+                </h3>
 
-              <tbody>
-                {searchResult.results.map((item) => (
-                  <tr
-                    key={`${item.product_id}-${item.rank}`}
+                <div className="metric-grid">
+                  <article className="metric-card">
+                    <span>TOP10 최저가</span>
+                    <strong>
+                      {priceSummary.lowest
+                        .toLocaleString()}원
+                    </strong>
+                  </article>
+
+                  <article className="metric-card">
+                    <span>TOP10 평균가</span>
+                    <strong>
+                      {priceSummary.average
+                        .toLocaleString()}원
+                    </strong>
+                  </article>
+
+                  <article className="metric-card">
+                    <span>TOP10 최고가</span>
+                    <strong>
+                      {priceSummary.highest
+                        .toLocaleString()}원
+                    </strong>
+                  </article>
+
+                  <article className="metric-card">
+                    <span>피싱템 평균가</span>
+                    <strong>
+                      {priceSummary.our_average
+                        ? `${priceSummary.our_average
+                            .toLocaleString()}원`
+                        : "-"}
+                    </strong>
+                  </article>
+                </div>
+
+                {priceSummary.difference_percent !==
+                  null && (
+                  <div className="info-message">
+                    피싱템 평균가격이 TOP10 평균보다{" "}
+                    {Math.abs(
+                      priceSummary.difference_percent,
+                    )}
+                    %{" "}
+                    {priceSummary.difference_percent > 0
+                      ? "높습니다."
+                      : "낮습니다."}
+                  </div>
+                )}
+              </>
+            )}
+
+          {searchResult.market_top10.length > 0 && (
+            <>
+              <h3 className="rank-section-title">
+                🏪 시장 경쟁 상품 TOP 10
+              </h3>
+
+              <div className="table-scroll">
+                <table className="result-table rank-market-table">
+                  <thead>
+                    <tr>
+                      <th>순위</th>
+                      <th>이미지</th>
+                      <th>상품명</th>
+                      <th>판매처</th>
+                      <th>가격</th>
+                      <th>유형</th>
+                      <th>링크</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {searchResult.market_top10.map(
+                      (item) => (
+                        <tr
+                          key={`market-${itemKey(item)}`}
+                        >
+                          <td>
+                            <strong>{item.rank}위</strong>
+                          </td>
+                          <td>
+                            {item.image ? (
+                              <img
+                                src={item.image}
+                                alt=""
+                                className="rank-thumbnail"
+                              />
+                            ) : (
+                              "-"
+                            )}
+                          </td>
+                          <td>{item.title}</td>
+                          <td>{item.mall_name}</td>
+                          <td>
+                            {item.price
+                              .toLocaleString()}원
+                          </td>
+                          <td>
+                            <span className="catalog-badge">
+                              {item.catalog_badge}
+                            </span>
+                          </td>
+                          <td>
+                            {item.link ? (
+                              <a
+                                href={item.link}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="product-link"
+                              >
+                                상품 보기
+                              </a>
+                            ) : (
+                              "-"
+                            )}
+                          </td>
+                        </tr>
+                      ),
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          <h3 className="rank-section-title">
+            📌 저장 및 모니터링할 상품 선택
+          </h3>
+
+          <p className="rank-save-notice">
+            검색만으로는 저장되지 않습니다. 선택한
+            상품만 통합 순위기록에 저장되고 모니터링에
+            등록됩니다.
+          </p>
+
+          {searchResult.results.length === 0 ? (
+            <div className="empty-state compact-state">
+              <span>📭</span>
+              <h3>
+                {searchResult.limit}위 내에 피싱템 상품이
+                없습니다.
+              </h3>
+              <p>
+                네이버쇼핑 상품{" "}
+                {searchResult.fetched_count
+                  .toLocaleString()}개를 확인했습니다.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="rank-selection-toolbar">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={
+                      selectedKeys.length > 0 &&
+                      selectedKeys.length ===
+                        searchResult.results.length
+                    }
+                    onChange={toggleAllItems}
+                    disabled={savePending}
+                  />
+                  전체 선택
+                </label>
+
+                <strong>
+                  선택 {selectedKeys.length}개
+                </strong>
+              </div>
+
+              <div className="table-scroll">
+                <table className="result-table">
+                  <thead>
+                    <tr>
+                      <th>선택</th>
+                      <th>순위</th>
+                      <th>이미지</th>
+                      <th>상품명</th>
+                      <th>판매처</th>
+                      <th>가격</th>
+                      <th>노출 유형</th>
+                      <th>카테고리</th>
+                      <th>링크</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {searchResult.results.map(
+                      (item) => {
+                        const key = itemKey(item);
+
+                        return (
+                          <tr key={`ours-${key}`}>
+                            <td>
+                              <input
+                                type="checkbox"
+                                aria-label={
+                                  `${item.title} 선택`
+                                }
+                                checked={selectedKeys
+                                  .includes(key)}
+                                disabled={savePending}
+                                onChange={() =>
+                                  toggleItem(item)
+                                }
+                              />
+                            </td>
+                            <td>
+                              <strong>
+                                {item.rank}위
+                              </strong>
+                            </td>
+                            <td>
+                              {item.image ? (
+                                <img
+                                  src={item.image}
+                                  alt=""
+                                  className="rank-thumbnail"
+                                />
+                              ) : (
+                                "-"
+                              )}
+                            </td>
+                            <td>{item.title}</td>
+                            <td>{item.mall_name}</td>
+                            <td>
+                              {item.price
+                                .toLocaleString()}원
+                            </td>
+                            <td>
+                              <span className="catalog-badge">
+                                {item.is_catalog
+                                  ? "🔗 "
+                                  : "✅ "}
+                                {item.catalog_badge}
+                              </span>
+                            </td>
+                            <td>
+                              {item.categories
+                                .filter(Boolean)
+                                .join(" > ") || "-"}
+                            </td>
+                            <td>
+                              {item.link ? (
+                                <a
+                                  href={item.link}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="product-link"
+                                >
+                                  상품 보기
+                                </a>
+                              ) : (
+                                "-"
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      },
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <button
+                type="button"
+                className="primary-button rank-save-button"
+                disabled={
+                  savePending ||
+                  selectedKeys.length === 0
+                }
+                onClick={() =>
+                  void handleSaveSelected()
+                }
+              >
+                {savePending
+                  ? "선택 상품 저장 중..."
+                  : `🚀 선택 ${selectedKeys.length}개 저장 및 모니터링 등록`}
+              </button>
+            </>
+          )}
+
+          {saveResult && (
+            <>
+              <div className="success-message">
+                {saveResult.message}
+              </div>
+
+              {saveResult.monitor_duplicate_count > 0 && (
+                <div className="info-message">
+                  이미 등록된 모니터링 상품{" "}
+                  {saveResult.monitor_duplicate_count}건은
+                  중복 등록하지 않았습니다.
+                </div>
+              )}
+
+              {saveResult.monitor_errors.map(
+                (message) => (
+                  <div
+                    className="error-message"
+                    key={message}
                   >
-                    <td>
-                      <strong>{item.rank}위</strong>
-                    </td>
-                    <td>{item.title}</td>
-                    <td>{item.mall_name}</td>
-                    <td>
-                      {item.price.toLocaleString()}원
-                    </td>
-                    <td>
-                      {item.categories
-                        .filter(Boolean)
-                        .join(" > ") || "-"}
-                    </td>
-                    <td>
-                      <a
-                        href={item.link}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="product-link"
-                      >
-                        상품 보기
-                      </a>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    모니터링 등록 오류: {message}
+                  </div>
+                ),
+              )}
+            </>
+          )}
+
+          {saveError && (
+            <div className="error-message">
+              {saveError}
+            </div>
+          )}
         </div>
       )}
     </>

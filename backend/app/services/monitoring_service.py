@@ -220,3 +220,108 @@ def delete_monitor_items(
             worksheet.delete_rows(row_number)
 
     return len(row_numbers)
+
+
+def add_monitor_items_bulk(
+    items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if not items:
+        return {
+            "added_items": [],
+            "added_count": 0,
+            "duplicate_count": 0,
+        }
+
+    with _monitor_lock:
+        worksheet = get_monitor_worksheet()
+        values = worksheet.get_all_values()
+
+        existing_keys: set[tuple[str, str]] = set()
+
+        for row in values[1:]:
+            padded = row + [""] * len(
+                MONITOR_HEADERS
+            )
+
+            existing_keys.add((
+                padded[1].strip().casefold(),
+                padded[4].strip(),
+            ))
+
+        added_items: list[dict[str, Any]] = []
+        rows: list[list[Any]] = []
+        duplicate_count = 0
+        incoming_keys: set[tuple[str, str]] = set()
+
+        registered_at = datetime.now(
+            KST
+        ).strftime("%Y-%m-%d %H:%M:%S")
+
+        for raw_item in items:
+            keyword = str(
+                raw_item.get("keyword") or ""
+            ).strip()
+            product_id = str(
+                raw_item.get("product_id") or ""
+            ).strip()
+            product_name = str(
+                raw_item.get("product_name") or ""
+            ).strip()
+            memo = str(
+                raw_item.get("memo") or ""
+            ).strip()
+
+            if not keyword:
+                continue
+
+            key = (
+                keyword.casefold(),
+                product_id,
+            )
+
+            if (
+                key in existing_keys
+                or key in incoming_keys
+            ):
+                duplicate_count += 1
+                continue
+
+            incoming_keys.add(key)
+
+            item = {
+                "item_id": uuid.uuid4().hex,
+                "keyword": keyword,
+                "registered_at": registered_at,
+                "memo": memo,
+                "product_id": product_id,
+                "product_name": product_name,
+            }
+
+            added_items.append(item)
+
+            rows.append([
+                safe_sheet_value(item["item_id"]),
+                safe_sheet_value(item["keyword"]),
+                safe_sheet_value(
+                    item["registered_at"]
+                ),
+                safe_sheet_value(item["memo"]),
+                safe_sheet_value(
+                    item["product_id"]
+                ),
+                safe_sheet_value(
+                    item["product_name"]
+                ),
+            ])
+
+        if rows:
+            worksheet.append_rows(
+                rows,
+                value_input_option="RAW",
+            )
+
+    return {
+        "added_items": added_items,
+        "added_count": len(added_items),
+        "duplicate_count": duplicate_count,
+    }
