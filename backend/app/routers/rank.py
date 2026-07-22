@@ -2,7 +2,6 @@ from typing import Literal
 
 from fastapi import (
     APIRouter,
-    BackgroundTasks,
     Depends,
     HTTPException,
 )
@@ -10,9 +9,6 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.dependencies import (
     require_authenticated_session,
-)
-from app.services.google_sheets import (
-    save_rank_search_result_safely,
 )
 from app.services.rank_service import (
     NaverShoppingError,
@@ -52,7 +48,6 @@ class RankSearchRequest(BaseModel):
 @router.post("/search")
 def search_rank(
     request: RankSearchRequest,
-    background_tasks: BackgroundTasks,
 ):
     try:
         result = search_our_store_ranks(
@@ -60,19 +55,9 @@ def search_rank(
             limit=request.limit,
         )
 
-        save_scheduled = bool(
-            result.get("results")
-        )
-
-        if save_scheduled:
-            background_tasks.add_task(
-                save_rank_search_result_safely,
-                result,
-            )
-
         return {
             **result,
-            "save_scheduled": save_scheduled,
+            "save_scheduled": False,
         }
 
     except NaverShoppingError as error:
