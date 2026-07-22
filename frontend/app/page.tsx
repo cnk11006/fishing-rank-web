@@ -18,6 +18,9 @@ import {
   analyzeSeason,
   analyzeCrossPurchase,
   analyzeCandidates,
+  getDataManagementOverview,
+  migrateLegacyRankSheets,
+  clearApplicationCaches,
 } from "@/lib/api";
 import type {
   RankSearchResponse,
@@ -29,6 +32,9 @@ import type {
   SeasonAnalysisResponse,
   CrossPurchaseResponse,
   CandidateAnalysisResponse,
+  DataManagementOverview,
+  RankMigrationResponse,
+  CacheClearResponse,
 } from "@/lib/api";
 
 const navigationItems = [
@@ -328,6 +334,8 @@ export default function Home() {
           <CrossPurchaseAnalysis />
         ) : activeNavigation === "candidates" ? (
           <CandidateAnalysis />
+        ) : activeNavigation === "data" ? (
+          <DataManagement />
         ) : (
           <FeaturePreview
             icon={activeItem.icon}
@@ -2659,6 +2667,530 @@ function RankChangeBadge({
     </span>
   );
 }
+
+
+function DataManagement() {
+  const [activeTab, setActiveTab] = useState<
+    "migration" | "cache" | "system"
+  >("migration");
+  const [overview, setOverview] =
+    useState<DataManagementOverview | null>(null);
+  const [migrationResult, setMigrationResult] =
+    useState<RankMigrationResponse | null>(null);
+  const [cacheResult, setCacheResult] =
+    useState<CacheClearResponse | null>(null);
+  const [backupConfirmed, setBackupConfirmed] =
+    useState(false);
+  const [confirmationText, setConfirmationText] =
+    useState("");
+  const [loading, setLoading] = useState(true);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  const sheetUrl =
+    process.env.NEXT_PUBLIC_GOOGLE_SHEET_URL ?? "";
+
+  async function loadOverview() {
+    setLoading(true);
+    setError("");
+
+    try {
+      const response =
+        await getDataManagementOverview();
+      setOverview(response);
+    } catch (requestError) {
+      setOverview(null);
+      setError(
+        requestError instanceof ApiError
+          ? requestError.message
+          : "데이터 현황을 불러오지 못했습니다.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadOverview();
+  }, []);
+
+  async function handleMigration() {
+    if (!backupConfirmed) {
+      setError(
+        "Google Sheets 백업 확인에 체크해 주세요.",
+      );
+      return;
+    }
+
+    if (confirmationText.trim() !== "통합 실행") {
+      setError(
+        '확인란에 "통합 실행"을 입력해 주세요.',
+      );
+      return;
+    }
+
+    if (
+      !window.confirm(
+        "기존 키워드별 순위기록을 통합하시겠습니까? " +
+          "원본 워크시트는 삭제되지 않습니다.",
+      )
+    ) {
+      return;
+    }
+
+    setPending(true);
+    setError("");
+    setMessage("");
+    setMigrationResult(null);
+
+    try {
+      const response =
+        await migrateLegacyRankSheets();
+      setMigrationResult(response);
+      setMessage(
+        `순위기록 ${response.total_migrated_count.toLocaleString()}건을 통합했습니다.`,
+      );
+      setConfirmationText("");
+      setBackupConfirmed(false);
+      await loadOverview();
+    } catch (requestError) {
+      setError(
+        requestError instanceof ApiError
+          ? requestError.message
+          : "순위기록 통합에 실패했습니다.",
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function handleClearCache() {
+    if (
+      !window.confirm(
+        "백엔드 캐시를 초기화할까요? " +
+          "Google Sheets의 실제 데이터는 삭제되지 않습니다.",
+      )
+    ) {
+      return;
+    }
+
+    setPending(true);
+    setError("");
+    setMessage("");
+    setCacheResult(null);
+
+    try {
+      const response =
+        await clearApplicationCaches();
+      setCacheResult(response);
+      setMessage(response.message);
+    } catch (requestError) {
+      setError(
+        requestError instanceof ApiError
+          ? requestError.message
+          : "캐시 초기화에 실패했습니다.",
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
+  function readinessBadge(
+    ready: boolean,
+  ) {
+    return (
+      <span
+        className={
+          ready
+            ? "system-ready"
+            : "system-not-ready"
+        }
+      >
+        {ready ? "✅ 설정됨" : "❌ 미설정"}
+      </span>
+    );
+  }
+
+  return (
+    <section className="data-management">
+      <div className="management-warning">
+        <strong>⚠️ 데이터 관리 주의사항</strong>
+        <p>
+          순위기록 통합을 실행하기 전에 Google Sheets
+          사본을 만들어 두는 것을 권장합니다. 원본 시트는
+          자동으로 삭제하지 않습니다.
+        </p>
+      </div>
+
+      <div className="management-toolbar">
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => void loadOverview()}
+          disabled={loading || pending}
+        >
+          {loading ? "현황 확인 중..." : "🔄 현황 새로고침"}
+        </button>
+
+        {sheetUrl && (
+          <a
+            href={sheetUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="secondary-button"
+          >
+            📗 Google Sheets 열기
+          </a>
+        )}
+      </div>
+
+      {error && (
+        <div className="error-message">{error}</div>
+      )}
+
+      {message && (
+        <div className="success-message">{message}</div>
+      )}
+
+      {overview && (
+        <div className="metric-grid management-metrics">
+          <article className="metric-card">
+            <span>전체 워크시트</span>
+            <strong>
+              {overview.summary.worksheet_count
+                .toLocaleString()}개
+            </strong>
+          </article>
+
+          <article className="metric-card">
+            <span>통합 순위기록</span>
+            <strong>
+              {overview.summary.rank_record_count
+                .toLocaleString()}건
+            </strong>
+          </article>
+
+          <article className="metric-card">
+            <span>모니터링 항목</span>
+            <strong>
+              {overview.summary.monitor_count
+                .toLocaleString()}개
+            </strong>
+          </article>
+
+          <article className="metric-card">
+            <span>기존 순위시트</span>
+            <strong>
+              {overview.summary.legacy_sheet_count
+                .toLocaleString()}개
+            </strong>
+          </article>
+        </div>
+      )}
+
+      {overview?.summary.latest_collected_at && (
+        <div className="latest-collection-info">
+          최근 순위 수집:{" "}
+          <strong>
+            {overview.summary.latest_collected_at}
+          </strong>
+        </div>
+      )}
+
+      <div className="analysis-tabs management-tabs">
+        <button
+          type="button"
+          className={
+            activeTab === "migration"
+              ? "analysis-tab active"
+              : "analysis-tab"
+          }
+          onClick={() => setActiveTab("migration")}
+        >
+          📦 순위기록 통합
+        </button>
+
+        <button
+          type="button"
+          className={
+            activeTab === "cache"
+              ? "analysis-tab active"
+              : "analysis-tab"
+          }
+          onClick={() => setActiveTab("cache")}
+        >
+          🧹 캐시 관리
+        </button>
+
+        <button
+          type="button"
+          className={
+            activeTab === "system"
+              ? "analysis-tab active"
+              : "analysis-tab"
+          }
+          onClick={() => setActiveTab("system")}
+        >
+          ℹ️ 시스템 정보
+        </button>
+      </div>
+
+      {activeTab === "migration" && (
+        <section className="management-panel">
+          <h3>📦 기존 순위기록 통합</h3>
+          <p>
+            기존 키워드별 워크시트를
+            <strong> 📊 통합 순위기록</strong>으로
+            이전합니다. 이미 이전한 시트와 중복 기록은
+            건너뜁니다.
+          </p>
+
+          {overview &&
+            overview.legacy_sheets.length > 0 && (
+              <div className="legacy-sheet-list">
+                <strong>통합 대상 워크시트</strong>
+                <div>
+                  {overview.legacy_sheets.map(
+                    (sheet) => (
+                      <span key={sheet}>{sheet}</span>
+                    ),
+                  )}
+                </div>
+              </div>
+            )}
+
+          {overview &&
+            overview.legacy_sheets.length === 0 && (
+              <div className="success-message">
+                통합할 기존 순위시트가 없습니다.
+              </div>
+            )}
+
+          <label className="management-confirm-check">
+            <input
+              type="checkbox"
+              checked={backupConfirmed}
+              disabled={pending}
+              onChange={(event) =>
+                setBackupConfirmed(
+                  event.target.checked,
+                )
+              }
+            />
+            Google Sheets 백업 또는 사본 생성을
+            확인했습니다.
+          </label>
+
+          <div className="field-group confirmation-field">
+            <label htmlFor="migration-confirmation">
+              실행 확인 문구
+            </label>
+            <input
+              id="migration-confirmation"
+              value={confirmationText}
+              placeholder="통합 실행"
+              disabled={pending}
+              onChange={(event) =>
+                setConfirmationText(
+                  event.target.value,
+                )
+              }
+            />
+            <small>
+              실행하려면 정확히 “통합 실행”을 입력하세요.
+            </small>
+          </div>
+
+          <button
+            type="button"
+            className="primary-button"
+            disabled={
+              pending ||
+              !backupConfirmed ||
+              confirmationText.trim() !==
+                "통합 실행" ||
+              !overview ||
+              overview.legacy_sheets.length === 0
+            }
+            onClick={() => void handleMigration()}
+          >
+            {pending
+              ? "순위기록 통합 중..."
+              : "🔄 기존 순위시트 통합 실행"}
+          </button>
+
+          {migrationResult && (
+            <div className="migration-result">
+              <div className="result-summary">
+                총{" "}
+                {migrationResult.total_migrated_count
+                  .toLocaleString()}건 이전 · 원본 시트
+                보존
+              </div>
+
+              <div className="table-scroll">
+                <table className="result-table">
+                  <thead>
+                    <tr>
+                      <th>원본 시트</th>
+                      <th>이전 건수</th>
+                      <th>상태</th>
+                      <th>메모</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {migrationResult.results.map(
+                      (item) => (
+                        <tr key={item.source_sheet}>
+                          <td>
+                            <strong>
+                              {item.source_sheet}
+                            </strong>
+                          </td>
+                          <td>
+                            {item.migrated_count
+                              .toLocaleString()}건
+                          </td>
+                          <td>{item.status}</td>
+                          <td>{item.message}</td>
+                        </tr>
+                      ),
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      {activeTab === "cache" && (
+        <section className="management-panel">
+          <h3>🧹 백엔드 캐시 관리</h3>
+          <p>
+            키워드 카테고리와 시즌 분석 등 임시 캐시를
+            초기화합니다. Google Sheets에 저장된 실제
+            데이터는 삭제하지 않습니다.
+          </p>
+
+          <button
+            type="button"
+            className="primary-button"
+            disabled={pending}
+            onClick={() => void handleClearCache()}
+          >
+            {pending
+              ? "캐시 초기화 중..."
+              : "🧹 전체 데이터 캐시 초기화"}
+          </button>
+
+          {cacheResult && (
+            <div className="cache-result-grid">
+              <article>
+                <span>키워드 카테고리</span>
+                <strong>
+                  {cacheResult.cleared
+                    .keyword_category_cache}개
+                </strong>
+              </article>
+              <article>
+                <span>시즌 분석</span>
+                <strong>
+                  {cacheResult.cleared
+                    .season_analysis_cache}개
+                </strong>
+              </article>
+              <article>
+                <span>Sheets 연결</span>
+                <strong>초기화 완료</strong>
+              </article>
+            </div>
+          )}
+        </section>
+      )}
+
+      {activeTab === "system" && overview && (
+        <section className="management-panel">
+          <h3>ℹ️ 시스템 정보</h3>
+
+          <div className="system-info-grid">
+            <article>
+              <h4>현재 설정</h4>
+              <dl>
+                <div>
+                  <dt>네이버 쇼핑 API</dt>
+                  <dd>
+                    {readinessBadge(
+                      overview.system
+                        .naver_shopping_ready,
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>네이버 검색광고 API</dt>
+                  <dd>
+                    {readinessBadge(
+                      overview.system
+                        .naver_search_ad_ready,
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Google Sheets</dt>
+                  <dd>
+                    {readinessBadge(
+                      overview.system
+                        .google_sheets_ready,
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>로그인 인증</dt>
+                  <dd>
+                    {readinessBadge(
+                      overview.system
+                        .authentication_ready,
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>실행 환경</dt>
+                  <dd>
+                    {overview.system.environment}
+                  </dd>
+                </div>
+                <div>
+                  <dt>기준 시간대</dt>
+                  <dd>{overview.system.timezone}</dd>
+                </div>
+              </dl>
+            </article>
+
+            <article>
+              <h4>워크시트 목록</h4>
+              <ul className="worksheet-list">
+                {overview.worksheets.map(
+                  (worksheet) => (
+                    <li key={worksheet.title}>
+                      <span>{worksheet.title}</span>
+                      <small>
+                        {worksheet.is_system
+                          ? "시스템"
+                          : "일반"}
+                      </small>
+                    </li>
+                  ),
+                )}
+              </ul>
+            </article>
+          </div>
+        </section>
+      )}
+    </section>
+  );
+}
+
 
 function FeaturePreview({
   icon,

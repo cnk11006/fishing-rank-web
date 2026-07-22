@@ -14,6 +14,7 @@ from app.routers.keywords import router as keywords_router
 from app.routers.advertising import router as advertising_router
 from app.routers.cross_purchase import router as cross_purchase_router
 from app.routers.candidates import router as candidates_router
+from app.routers.data_management import router as data_management_router
 
 
 settings = get_settings()
@@ -51,6 +52,7 @@ app.include_router(keywords_router)
 app.include_router(advertising_router)
 app.include_router(cross_purchase_router)
 app.include_router(candidates_router)
+app.include_router(data_management_router)
 
 
 @app.get("/")

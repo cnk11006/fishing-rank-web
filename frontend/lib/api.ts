@@ -586,3 +586,74 @@ export async function analyzeCandidates(
 
   return data as CandidateAnalysisResponse;
 }
+
+export type DataManagementOverview = {
+  summary: {
+    worksheet_count: number;
+    rank_record_count: number;
+    monitor_count: number;
+    legacy_sheet_count: number;
+    latest_collected_at: string;
+  };
+  legacy_sheets: string[];
+  worksheets: {
+    title: string;
+    is_system: boolean;
+  }[];
+  system: {
+    naver_shopping_ready: boolean;
+    naver_search_ad_ready: boolean;
+    google_sheets_ready: boolean;
+    authentication_ready: boolean;
+    environment: string;
+    timezone: string;
+  };
+};
+
+export type RankMigrationResponse = {
+  total_migrated_count: number;
+  result_count: number;
+  source_sheets_deleted: boolean;
+  results: {
+    source_sheet: string;
+    migrated_count: number;
+    status: "completed" | "skipped" | "error";
+    message: string;
+  }[];
+};
+
+export type CacheClearResponse = {
+  message: string;
+  cleared: {
+    keyword_category_cache: number;
+    season_analysis_cache: number;
+    google_sheets_connection_cache: number;
+  };
+};
+
+export function getDataManagementOverview() {
+  return apiRequest<DataManagementOverview>(
+    "/api/data-management/overview",
+  );
+}
+
+export function migrateLegacyRankSheets() {
+  return apiRequest<RankMigrationResponse>(
+    "/api/data-management/migrate",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        backup_confirmed: true,
+      }),
+    },
+  );
+}
+
+export function clearApplicationCaches() {
+  return apiRequest<CacheClearResponse>(
+    "/api/data-management/clear-cache",
+    {
+      method: "POST",
+    },
+  );
+}
