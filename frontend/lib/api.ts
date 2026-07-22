@@ -270,6 +270,15 @@ export type MonitoringHistoryItem = MonitorItem & {
   rank_change: number | null;
   latest_collected_at: string | null;
   previous_collected_at: string | null;
+  latest_title: string;
+  latest_mall_name: string;
+  latest_price: number;
+  latest_link: string;
+  latest_image: string;
+  recent_history: {
+    collected_at: string;
+    rank: number | null;
+  }[];
   status:
     | "no_history"
     | "not_exposed"

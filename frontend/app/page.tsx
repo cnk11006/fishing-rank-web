@@ -1,7 +1,12 @@
 "use client";
 
 import Image from "next/image";
-import { FormEvent, useEffect, useState } from "react";
+import {
+  FormEvent,
+  Fragment,
+  useEffect,
+  useState,
+} from "react";
 import {
   ApiError,
   getAuthenticationStatus,
@@ -1063,6 +1068,8 @@ function MonitoringManager() {
       | "keyword"
       | "registered_desc"
     >("rank_asc");
+  const [expandedIds, setExpandedIds] =
+    useState<string[]>([]);
 
   async function loadItems(
     resetSelection = true,
@@ -1325,6 +1332,14 @@ function MonitoringManager() {
     }
 
     return "➖ 변동 없음";
+  }
+
+  function toggleExpanded(itemId: string) {
+    setExpandedIds((current) =>
+      current.includes(itemId)
+        ? current.filter((id) => id !== itemId)
+        : [...current, itemId],
+    );
   }
 
   const normalizedQuery =
@@ -1786,9 +1801,34 @@ function MonitoringManager() {
                   history?.latest_rank ?? null;
                 const presentation =
                   rankStatus(rank);
+                const displayTitle =
+                  item.product_name ||
+                  history?.latest_title ||
+                  "전체 피싱템 상품";
+                const imageUrl =
+                  history?.latest_image &&
+                  /^https?:\/\//i.test(
+                    history.latest_image,
+                  )
+                    ? history.latest_image
+                    : "";
+                const productLink =
+                  history?.latest_link &&
+                  /^https?:\/\//i.test(
+                    history.latest_link,
+                  )
+                    ? history.latest_link
+                    : "";
+                const recentHistory =
+                  history?.recent_history ?? [];
+                const expanded =
+                  expandedIds.includes(
+                    item.item_id,
+                  );
 
                 return (
-                  <tr key={item.item_id}>
+                  <Fragment key={item.item_id}>
+                    <tr>
                     <td>
                       <input
                         type="checkbox"
@@ -1805,17 +1845,108 @@ function MonitoringManager() {
                     </td>
 
                     <td>
-                      <strong>{item.keyword}</strong>
-                      <div>
-                        {item.product_name ||
-                          "전체 피싱템 상품"}
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: "12px",
+                          alignItems: "center",
+                          minWidth: "270px",
+                        }}
+                      >
+                        {imageUrl ? (
+                          <img
+                            src={imageUrl}
+                            alt={displayTitle}
+                            width={64}
+                            height={64}
+                            loading="lazy"
+                            referrerPolicy="no-referrer"
+                            style={{
+                              width: "64px",
+                              height: "64px",
+                              objectFit: "cover",
+                              borderRadius: "10px",
+                              border:
+                                "1px solid #e5e7eb",
+                              flexShrink: 0,
+                            }}
+                          />
+                        ) : (
+                          <div
+                            aria-hidden="true"
+                            style={{
+                              width: "64px",
+                              height: "64px",
+                              display: "grid",
+                              placeItems: "center",
+                              borderRadius: "10px",
+                              background: "#f3f4f6",
+                              flexShrink: 0,
+                            }}
+                          >
+                            🎣
+                          </div>
+                        )}
+
+                        <div>
+                          <strong>
+                            {item.keyword}
+                          </strong>
+
+                          <div>
+                            {productLink ? (
+                              <a
+                                href={productLink}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{
+                                  color: "#0066cc",
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {displayTitle} ↗
+                              </a>
+                            ) : (
+                              displayTitle
+                            )}
+                          </div>
+
+                          {(history?.latest_mall_name ||
+                            history?.latest_price >
+                              0) && (
+                            <small>
+                              {history
+                                ?.latest_mall_name ||
+                                "판매처 확인 불가"}
+                              {history?.latest_price >
+                                0
+                                ? ` · ${history.latest_price.toLocaleString()}원`
+                                : ""}
+                            </small>
+                          )}
+
+                          <div>
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() =>
+                                toggleExpanded(
+                                  item.item_id,
+                                )
+                              }
+                              style={{
+                                marginTop: "7px",
+                                padding: "5px 9px",
+                                minHeight: "auto",
+                              }}
+                            >
+                              {expanded
+                                ? "이력 닫기"
+                                : "최근 순위 보기"}
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                      {item.product_id && (
-                        <small>
-                          productId:{" "}
-                          {item.product_id}
-                        </small>
-                      )}
                     </td>
 
                     <td>
@@ -1888,6 +2019,111 @@ function MonitoringManager() {
                       {item.registered_at || "-"}
                     </td>
                   </tr>
+
+                  {expanded && (
+                    <tr
+                      key={`${item.item_id}-history`}
+                    >
+                      <td
+                        colSpan={8}
+                        style={{
+                          background: "#f8fafc",
+                          padding: "16px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "grid",
+                            gap: "12px",
+                          }}
+                        >
+                          <strong>
+                            최근 순위 이력
+                          </strong>
+
+                          {recentHistory.length ===
+                          0 ? (
+                            <span>
+                              아직 수집된 순위 기록이
+                              없습니다.
+                            </span>
+                          ) : (
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: "8px",
+                                flexWrap: "wrap",
+                              }}
+                            >
+                              {recentHistory.map(
+                                (entry, index) => (
+                                  <div
+                                    key={
+                                      `${entry.collected_at}-` +
+                                      `${index}`
+                                    }
+                                    style={{
+                                      minWidth: "130px",
+                                      border:
+                                        "1px solid #e5e7eb",
+                                      borderRadius:
+                                        "10px",
+                                      background:
+                                        "#ffffff",
+                                      padding:
+                                        "10px 12px",
+                                    }}
+                                  >
+                                    <strong>
+                                      {entry.rank
+                                        ? `${entry.rank}위`
+                                        : "미노출"}
+                                    </strong>
+                                    <div>
+                                      <small>
+                                        {entry
+                                          .collected_at ||
+                                          "-"}
+                                      </small>
+                                    </div>
+                                  </div>
+                                ),
+                              )}
+                            </div>
+                          )}
+
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: "14px",
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            {productLink && (
+                              <a
+                                href={productLink}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="secondary-button"
+                              >
+                                상품 페이지 열기
+                              </a>
+                            )}
+
+                            {item.product_id && (
+                              <span>
+                                productId:{" "}
+                                <strong>
+                                  {item.product_id}
+                                </strong>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               })}
             </tbody>

@@ -99,6 +99,21 @@ def load_rank_history_rows() -> list[dict[str, Any]]:
                 row,
                 "productId",
             ),
+            "mall_name": get_value(
+                row,
+                "판매처",
+            ),
+            "price": safe_integer(
+                get_value(row, "가격")
+            ) or 0,
+            "link": get_value(
+                row,
+                "링크",
+            ),
+            "image": get_value(
+                row,
+                "썸네일",
+            ),
         })
 
     return records
@@ -181,21 +196,37 @@ def calculate_monitoring_history() -> dict[str, Any]:
             else []
         )
 
-        latest_rank = (
+        latest_best = (
             min(
-                int(item["rank"])
-                for item in latest_matches
+                latest_matches,
+                key=lambda item: int(
+                    item["rank"]
+                ),
             )
             if latest_matches
             else None
         )
 
-        previous_rank = (
+        previous_best = (
             min(
-                int(item["rank"])
-                for item in previous_matches
+                previous_matches,
+                key=lambda item: int(
+                    item["rank"]
+                ),
             )
             if previous_matches
+            else None
+        )
+
+        latest_rank = (
+            int(latest_best["rank"])
+            if latest_best
+            else None
+        )
+
+        previous_rank = (
+            int(previous_best["rank"])
+            if previous_best
             else None
         )
 
@@ -205,6 +236,35 @@ def calculate_monitoring_history() -> dict[str, Any]:
             and previous_rank is not None
             else None
         )
+
+        recent_history: list[
+            dict[str, Any]
+        ] = []
+
+        for snapshot_time in snapshot_times[-10:]:
+            snapshot_matches = (
+                match_monitor_results(
+                    monitor,
+                    snapshots.get(
+                        snapshot_time,
+                        [],
+                    ),
+                )
+            )
+
+            snapshot_rank = (
+                min(
+                    int(item["rank"])
+                    for item in snapshot_matches
+                )
+                if snapshot_matches
+                else None
+            )
+
+            recent_history.append({
+                "collected_at": snapshot_time,
+                "rank": snapshot_rank,
+            })
 
         if not latest_time:
             status = "no_history"
@@ -238,6 +298,40 @@ def calculate_monitoring_history() -> dict[str, Any]:
             "rank_change": rank_change,
             "latest_collected_at": latest_time,
             "previous_collected_at": previous_time,
+            "latest_title": (
+                str(latest_best.get("title") or "")
+                if latest_best
+                else ""
+            ),
+            "latest_mall_name": (
+                str(
+                    latest_best.get(
+                        "mall_name"
+                    ) or ""
+                )
+                if latest_best
+                else ""
+            ),
+            "latest_price": (
+                int(
+                    latest_best.get("price") or 0
+                )
+                if latest_best
+                else 0
+            ),
+            "latest_link": (
+                str(latest_best.get("link") or "")
+                if latest_best
+                else ""
+            ),
+            "latest_image": (
+                str(
+                    latest_best.get("image") or ""
+                )
+                if latest_best
+                else ""
+            ),
+            "recent_history": recent_history,
             "status": status,
             "message": message,
         })
