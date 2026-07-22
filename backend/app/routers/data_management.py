@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from app.dependencies import require_authenticated_session
 from app.services.data_management_service import (
     DataManagementError,
+    DataManagementQuotaError,
     clear_application_caches,
     get_data_overview,
     migrate_legacy_rank_sheets,
@@ -27,6 +28,17 @@ class MigrationRequest(BaseModel):
 def data_overview():
     try:
         return get_data_overview()
+    except DataManagementQuotaError as error:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "message": str(error),
+                "retry_after": error.retry_after,
+            },
+            headers={
+                "Retry-After": str(error.retry_after),
+            },
+        ) from error
     except DataManagementError as error:
         raise HTTPException(
             status_code=500,

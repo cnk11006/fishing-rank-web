@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import copy
+import math
+import threading
+import time
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -42,8 +46,25 @@ MIGRATION_HEADERS = [
 ]
 
 
+OVERVIEW_CACHE_TTL_SECONDS = 300
+OVERVIEW_QUOTA_COOLDOWN_SECONDS = 60
+
+_overview_cache_lock = threading.Lock()
+_overview_cache_value: dict[str, Any] | None = None
+_overview_cache_expires_at = 0.0
+_overview_quota_blocked_until = 0.0
+
+
 class DataManagementError(Exception):
     pass
+
+
+class DataManagementQuotaError(DataManagementError):
+    def __init__(self, retry_after: int = 60):
+        self.retry_after = max(1, int(retry_after))
+        super().__init__(
+            "Google Sheets 읽기 요청 한도를 초과했습니다."
+        )
 
 
 def _safe_int(value: Any) -> int:
@@ -239,7 +260,7 @@ def _convert_legacy_rows(
     return converted
 
 
-def get_data_overview() -> dict[str, Any]:
+def _load_data_overview() -> dict[str, Any]:
     try:
         spreadsheet = get_spreadsheet()
         worksheets = spreadsheet.worksheets()
@@ -314,10 +335,70 @@ def get_data_overview() -> dict[str, Any]:
             },
         }
 
+    except gspread.exceptions.APIError as error:
+        response = getattr(error, "response", None)
+
+        if getattr(response, "status_code", None) == 429:
+            raise DataManagementQuotaError(
+                OVERVIEW_QUOTA_COOLDOWN_SECONDS
+            ) from error
+
+        raise DataManagementError(
+            f"데이터 현황을 불러오지 못했습니다: {error}"
+        ) from error
     except Exception as error:
         raise DataManagementError(
             f"데이터 현황을 불러오지 못했습니다: {error}"
         ) from error
+
+
+def get_data_overview() -> dict[str, Any]:
+    global _overview_cache_value
+    global _overview_cache_expires_at
+    global _overview_quota_blocked_until
+
+    now = time.monotonic()
+
+    with _overview_cache_lock:
+        now = time.monotonic()
+
+        if now < _overview_quota_blocked_until:
+            retry_after = math.ceil(
+                _overview_quota_blocked_until - now
+            )
+            raise DataManagementQuotaError(retry_after)
+
+        if (
+            _overview_cache_value is not None
+            and now < _overview_cache_expires_at
+        ):
+            return copy.deepcopy(_overview_cache_value)
+
+        try:
+            overview = _load_data_overview()
+        except DataManagementQuotaError:
+            _overview_quota_blocked_until = (
+                time.monotonic()
+                + OVERVIEW_QUOTA_COOLDOWN_SECONDS
+            )
+            raise
+
+        _overview_cache_value = copy.deepcopy(overview)
+        _overview_cache_expires_at = (
+            time.monotonic()
+            + OVERVIEW_CACHE_TTL_SECONDS
+        )
+
+        return copy.deepcopy(overview)
+
+
+def clear_data_overview_cache() -> None:
+    global _overview_cache_value
+    global _overview_cache_expires_at
+
+    with _overview_cache_lock:
+        _overview_cache_value = None
+        _overview_cache_expires_at = 0.0
 
 
 def migrate_legacy_rank_sheets() -> dict[str, Any]:
@@ -409,6 +490,8 @@ def migrate_legacy_rank_sheets() -> dict[str, Any]:
                     "message": str(error),
                 })
 
+        clear_data_overview_cache()
+
         return {
             "total_migrated_count": total_count,
             "result_count": len(results),
@@ -423,6 +506,8 @@ def migrate_legacy_rank_sheets() -> dict[str, Any]:
 
 
 def clear_application_caches() -> dict[str, Any]:
+    clear_data_overview_cache()
+
     category_count = 0
     season_count = 0
 
