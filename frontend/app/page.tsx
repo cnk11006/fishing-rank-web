@@ -1040,11 +1040,33 @@ function MonitoringManager() {
     useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [collecting, setCollecting] = useState(false);
+  const [collecting, setCollecting] =
+    useState(false);
   const [collectResult, setCollectResult] =
-    useState<MonitoringCollectResponse | null>(null);
+    useState<MonitoringCollectResponse | null>(
+      null,
+    );
+  const [searchQuery, setSearchQuery] =
+    useState("");
+  const [statusFilter, setStatusFilter] =
+    useState<
+      | "all"
+      | "exposed"
+      | "not_exposed"
+      | "no_history"
+      | "error"
+    >("all");
+  const [sortOption, setSortOption] =
+    useState<
+      | "rank_asc"
+      | "change_desc"
+      | "keyword"
+      | "registered_desc"
+    >("rank_asc");
 
-  async function loadItems() {
+  async function loadItems(
+    resetSelection = true,
+  ) {
     setLoading(true);
     setError("");
 
@@ -1064,7 +1086,10 @@ function MonitoringManager() {
           ]),
         ),
       );
-      setSelectedIds([]);
+
+      if (resetSelection) {
+        setSelectedIds([]);
+      }
     } catch (requestError) {
       setError(
         requestError instanceof ApiError
@@ -1084,6 +1109,7 @@ function MonitoringManager() {
     event: FormEvent<HTMLFormElement>,
   ) {
     event.preventDefault();
+
     const form = event.currentTarget;
     const formData = new FormData(form);
 
@@ -1107,9 +1133,9 @@ function MonitoringManager() {
         ).trim(),
       });
 
-      setMessage(result.message);
       form.reset();
       await loadItems();
+      setMessage(result.message);
     } catch (requestError) {
       setError(
         requestError instanceof ApiError
@@ -1140,11 +1166,11 @@ function MonitoringManager() {
     setError("");
 
     try {
-      const result = await deleteMonitoringItems(
-        selectedIds,
-      );
-      setMessage(result.message);
+      const result =
+        await deleteMonitoringItems(selectedIds);
+
       await loadItems();
+      setMessage(result.message);
     } catch (requestError) {
       setError(
         requestError instanceof ApiError
@@ -1163,8 +1189,11 @@ function MonitoringManager() {
     setCollectResult(null);
 
     try {
-      const result = await collectMonitoringRanks();
+      const result =
+        await collectMonitoringRanks();
+
       setCollectResult(result);
+      await loadItems(false);
       setMessage(
         `전체 ${result.total_items}개 항목의 순위 수집을 완료했습니다.`,
       );
@@ -1187,72 +1216,295 @@ function MonitoringManager() {
     );
   }
 
-  function toggleAll() {
-    setSelectedIds((current) =>
-      current.length === items.length
-        ? []
-        : items.map((item) => item.item_id),
+  function itemStatus(item: MonitorItem) {
+    const collectItem =
+      collectResult?.results.find(
+        (result) =>
+          result.item_id === item.item_id,
+      );
+
+    if (collectItem?.status === "error") {
+      return "error";
+    }
+
+    const history = historyById[item.item_id];
+
+    if (
+      !history ||
+      history.status === "no_history"
+    ) {
+      return "no_history";
+    }
+
+    if (history.latest_rank === null) {
+      return "not_exposed";
+    }
+
+    return "exposed";
+  }
+
+  function rankStatus(rank: number | null) {
+    if (!rank) {
+      return {
+        label: "⚪ 미노출",
+        background: "#f3f4f6",
+        color: "#4b5563",
+      };
+    }
+
+    if (rank <= 10) {
+      return {
+        label: "🟢 TOP 10",
+        background: "#dcfce7",
+        color: "#166534",
+      };
+    }
+
+    if (rank <= 50) {
+      return {
+        label: "🟢 TOP 50",
+        background: "#ecfdf5",
+        color: "#047857",
+      };
+    }
+
+    if (rank <= 100) {
+      return {
+        label: "🟡 TOP 100",
+        background: "#fef9c3",
+        color: "#854d0e",
+      };
+    }
+
+    if (rank <= 200) {
+      return {
+        label: "🟠 TOP 200",
+        background: "#ffedd5",
+        color: "#9a3412",
+      };
+    }
+
+    return {
+      label: "🔴 200위 밖",
+      background: "#fee2e2",
+      color: "#991b1b",
+    };
+  }
+
+  function rankChangeText(
+    history:
+      | MonitoringHistoryItem
+      | undefined,
+  ) {
+    if (!history) {
+      return "➖ 기록 없음";
+    }
+
+    if (
+      history.latest_rank === null &&
+      history.status === "not_exposed"
+    ) {
+      return "➖ 미노출";
+    }
+
+    if (
+      history.rank_change === null ||
+      history.previous_rank === null
+    ) {
+      return "➖ 첫 기록";
+    }
+
+    if (history.rank_change > 0) {
+      return `🔺 ${history.rank_change}위 상승`;
+    }
+
+    if (history.rank_change < 0) {
+      return `🔻 ${Math.abs(
+        history.rank_change,
+      )}위 하락`;
+    }
+
+    return "➖ 변동 없음";
+  }
+
+  const normalizedQuery =
+    searchQuery.trim().toLocaleLowerCase();
+
+  const filteredItems = [...items]
+    .filter((item) => {
+      const status = itemStatus(item);
+
+      if (
+        statusFilter !== "all" &&
+        status !== statusFilter
+      ) {
+        return false;
+      }
+
+      if (!normalizedQuery) {
+        return true;
+      }
+
+      return [
+        item.keyword,
+        item.product_name,
+        item.product_id,
+        item.memo,
+      ].some((value) =>
+        String(value || "")
+          .toLocaleLowerCase()
+          .includes(normalizedQuery),
+      );
+    })
+    .sort((left, right) => {
+      const leftHistory =
+        historyById[left.item_id];
+      const rightHistory =
+        historyById[right.item_id];
+
+      if (sortOption === "rank_asc") {
+        return (
+          (leftHistory?.latest_rank ??
+            Number.MAX_SAFE_INTEGER) -
+          (rightHistory?.latest_rank ??
+            Number.MAX_SAFE_INTEGER)
+        );
+      }
+
+      if (sortOption === "change_desc") {
+        return (
+          Math.abs(
+            rightHistory?.rank_change ?? 0,
+          ) -
+          Math.abs(
+            leftHistory?.rank_change ?? 0,
+          )
+        );
+      }
+
+      if (sortOption === "keyword") {
+        return left.keyword.localeCompare(
+          right.keyword,
+          "ko",
+        );
+      }
+
+      return String(
+        right.registered_at || "",
+      ).localeCompare(
+        String(left.registered_at || ""),
+      );
+    });
+
+  const statusCounts = items.reduce(
+    (counts, item) => {
+      const status = itemStatus(item);
+      counts[status] += 1;
+      return counts;
+    },
+    {
+      exposed: 0,
+      not_exposed: 0,
+      no_history: 0,
+      error: 0,
+    },
+  );
+
+  const visibleIds = filteredItems.map(
+    (item) => item.item_id,
+  );
+
+  const allVisibleSelected =
+    visibleIds.length > 0 &&
+    visibleIds.every((id) =>
+      selectedIds.includes(id),
     );
+
+  function toggleAllVisible() {
+    setSelectedIds((current) => {
+      if (allVisibleSelected) {
+        return current.filter(
+          (id) => !visibleIds.includes(id),
+        );
+      }
+
+      return Array.from(
+        new Set([...current, ...visibleIds]),
+      );
+    });
   }
 
   return (
     <>
       <form
-        className="monitor-form"
+        className="monitoring-add-form"
         onSubmit={handleAdd}
       >
-        <div className="field-group">
-          <label htmlFor="monitor-keyword">
-            키워드
-          </label>
+        <label>
+          키워드
           <input
-            id="monitor-keyword"
             name="keyword"
+            type="text"
             placeholder="예: 낚시의자"
             disabled={actionPending}
             required
           />
-        </div>
+        </label>
 
-        <div className="field-group">
-          <label htmlFor="monitor-product-id">
-            productId · 선택
-          </label>
+        <label>
+          메모
           <input
-            id="monitor-product-id"
-            name="product_id"
-            placeholder="특정 상품만 추적할 때 입력"
-            disabled={actionPending}
-          />
-        </div>
-
-        <div className="field-group">
-          <label htmlFor="monitor-product-name">
-            상품명 · 선택
-          </label>
-          <input
-            id="monitor-product-name"
-            name="product_name"
-            placeholder="관리용 상품명"
-            disabled={actionPending}
-          />
-        </div>
-
-        <div className="field-group">
-          <label htmlFor="monitor-memo">
-            메모 · 선택
-          </label>
-          <input
-            id="monitor-memo"
             name="memo"
-            placeholder="관리 메모"
+            type="text"
+            placeholder="선택 입력"
             disabled={actionPending}
           />
-        </div>
+        </label>
+
+        <details>
+          <summary
+            style={{
+              cursor: "pointer",
+              fontWeight: 700,
+              marginBottom: "10px",
+            }}
+          >
+            고급 상품 지정
+          </summary>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: "12px",
+            }}
+          >
+            <label>
+              productId
+              <input
+                name="product_id"
+                type="text"
+                placeholder="특정 상품 추적 시 입력"
+                disabled={actionPending}
+              />
+            </label>
+
+            <label>
+              상품명
+              <input
+                name="product_name"
+                type="text"
+                placeholder="특정 상품 추적 시 입력"
+                disabled={actionPending}
+              />
+            </label>
+          </div>
+        </details>
 
         <button
           type="submit"
-          className="primary-button monitor-add-button"
+          className="primary-button"
           disabled={actionPending}
         >
           {actionPending
@@ -1273,57 +1525,177 @@ function MonitoringManager() {
         </div>
       )}
 
-      <div className="monitor-toolbar">
+      <div className="metric-grid">
+        <article className="metric-card">
+          <span>전체 항목</span>
+          <strong>{items.length}개</strong>
+        </article>
+
+        <article className="metric-card">
+          <span>현재 노출</span>
+          <strong>
+            {statusCounts.exposed}개
+          </strong>
+        </article>
+
+        <article className="metric-card">
+          <span>미노출</span>
+          <strong>
+            {statusCounts.not_exposed}개
+          </strong>
+        </article>
+
+        <article className="metric-card">
+          <span>기록 없음·오류</span>
+          <strong>
+            {statusCounts.no_history} ·{" "}
+            {statusCounts.error}
+          </strong>
+        </article>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns:
+            "minmax(220px, 1fr) 180px 210px",
+          gap: "10px",
+          margin: "18px 0",
+        }}
+      >
+        <label>
+          목록 검색
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(event) =>
+              setSearchQuery(event.target.value)
+            }
+            placeholder="키워드·상품명·메모 검색"
+          />
+        </label>
+
+        <label>
+          상태
+          <select
+            value={statusFilter}
+            onChange={(event) =>
+              setStatusFilter(
+                event.target.value as
+                  | "all"
+                  | "exposed"
+                  | "not_exposed"
+                  | "no_history"
+                  | "error",
+              )
+            }
+          >
+            <option value="all">전체 상태</option>
+            <option value="exposed">노출</option>
+            <option value="not_exposed">
+              미노출
+            </option>
+            <option value="no_history">
+              수집 기록 없음
+            </option>
+            <option value="error">오류</option>
+          </select>
+        </label>
+
+        <label>
+          정렬
+          <select
+            value={sortOption}
+            onChange={(event) =>
+              setSortOption(
+                event.target.value as
+                  | "rank_asc"
+                  | "change_desc"
+                  | "keyword"
+                  | "registered_desc",
+              )
+            }
+          >
+            <option value="rank_asc">
+              순위 높은 순
+            </option>
+            <option value="change_desc">
+              변동 큰 순
+            </option>
+            <option value="keyword">
+              키워드 가나다순
+            </option>
+            <option value="registered_desc">
+              최근 등록순
+            </option>
+          </select>
+        </label>
+      </div>
+
+      <div className="monitoring-toolbar">
         <strong>
-          등록 항목 {items.length}개
+          표시 {filteredItems.length}개 · 선택{" "}
+          {selectedIds.length}개
         </strong>
 
-        <div>
-          <button
-            type="button"
-            className="primary-button"
-            onClick={() => void handleCollect()}
-            disabled={
-              loading ||
-              actionPending ||
-              collecting ||
-              items.length === 0
-            }
-          >
-            {collecting
-              ? "전체 순위 수집 중..."
-              : "🔄 전체 순위 수집"}
-          </button>
+        <button
+          type="button"
+          className="primary-button"
+          onClick={() => void handleCollect()}
+          disabled={
+            loading ||
+            actionPending ||
+            collecting ||
+            items.length === 0
+          }
+        >
+          {collecting
+            ? "전체 순위 수집 중..."
+            : "🔄 전체 순위 수집"}
+        </button>
 
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => void loadItems()}
-            disabled={
-              loading ||
-              actionPending ||
-              collecting
-            }
-          >
-            새로고침
-          </button>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => void loadItems()}
+          disabled={
+            loading ||
+            actionPending ||
+            collecting
+          }
+        >
+          새로고침
+        </button>
 
-          <button
-            type="button"
-            className="logout-button"
-            onClick={() => void handleDelete()}
-            disabled={
-              actionPending ||
-              selectedIds.length === 0
-            }
-          >
-            선택 삭제 ({selectedIds.length})
-          </button>
-        </div>
+        <button
+          type="button"
+          className="danger-button"
+          onClick={() => void handleDelete()}
+          disabled={
+            actionPending ||
+            selectedIds.length === 0
+          }
+        >
+          선택 삭제 ({selectedIds.length})
+        </button>
       </div>
 
       {collectResult && (
-        <section className="collection-result">
+        <details
+          open
+          style={{
+            margin: "16px 0",
+          }}
+        >
+          <summary
+            style={{
+              cursor: "pointer",
+              fontWeight: 800,
+            }}
+          >
+            최근 수집 결과 자세히 보기
+          </summary>
+
           <div className="metric-grid">
             <article className="metric-card">
               <span>전체 항목</span>
@@ -1355,63 +1727,32 @@ function MonitoringManager() {
               </strong>
             </article>
           </div>
-
-          <div className="table-scroll">
-            <table className="result-table collection-table">
-              <thead>
-                <tr>
-                  <th>키워드</th>
-                  <th>추적 상품</th>
-                  <th>최신 순위</th>
-                  <th>상태</th>
-                  <th>검색 결과</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {collectResult.results.map((result) => (
-                  <tr key={result.item_id}>
-                    <td>
-                      <strong>{result.keyword}</strong>
-                    </td>
-                    <td>
-                      {result.product_name ||
-                        "전체 피싱템 상품"}
-                    </td>
-                    <td>
-                      {result.rank
-                        ? `${result.rank}위`
-                        : "-"}
-                    </td>
-                    <td>
-                      <span
-                        className={`collection-status ${result.status}`}
-                      >
-                        {result.status === "exposed"
-                          ? "노출"
-                          : result.status === "not_exposed"
-                            ? "미노출"
-                            : "오류"}
-                      </span>
-                    </td>
-                    <td>{result.message}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+        </details>
       )}
 
       {loading ? (
-        <div className="empty-state compact-state">
+        <div className="empty-state">
           <span>⏳</span>
-          <h3>모니터링 목록을 불러오는 중입니다.</h3>
+          <h3>
+            모니터링 목록을 불러오는 중입니다.
+          </h3>
         </div>
       ) : items.length === 0 ? (
-        <div className="empty-state compact-state">
+        <div className="empty-state">
           <span>📋</span>
-          <h3>등록된 모니터링 항목이 없습니다.</h3>
+          <h3>
+            등록된 모니터링 항목이 없습니다.
+          </h3>
+        </div>
+      ) : filteredItems.length === 0 ? (
+        <div className="empty-state">
+          <span>🔎</span>
+          <h3>
+            검색·필터 조건에 맞는 항목이 없습니다.
+          </h3>
+          <p>
+            검색어 또는 상태 필터를 변경해 주세요.
+          </p>
         </div>
       ) : (
         <div className="table-scroll">
@@ -1421,67 +1762,131 @@ function MonitoringManager() {
                 <th>
                   <input
                     type="checkbox"
-                    aria-label="전체 선택"
-                    checked={
-                      items.length > 0 &&
-                      selectedIds.length === items.length
-                    }
-                    onChange={toggleAll}
+                    checked={allVisibleSelected}
+                    onChange={toggleAllVisible}
+                    aria-label="표시 항목 전체 선택"
                   />
                 </th>
-                <th>키워드</th>
-                <th>상품명</th>
+                <th>키워드·상품</th>
                 <th>최신 순위</th>
+                <th>순위 상태</th>
                 <th>순위 변화</th>
                 <th>마지막 수집</th>
-                <th>productId</th>
                 <th>메모</th>
                 <th>등록일</th>
               </tr>
             </thead>
 
             <tbody>
-              {items.map((item) => {
+              {filteredItems.map((item) => {
                 const history =
                   historyById[item.item_id];
+                const status = itemStatus(item);
+                const rank =
+                  history?.latest_rank ?? null;
+                const presentation =
+                  rankStatus(rank);
 
                 return (
                   <tr key={item.item_id}>
                     <td>
                       <input
                         type="checkbox"
-                        aria-label={`${item.keyword} 선택`}
                         checked={selectedIds.includes(
                           item.item_id,
                         )}
                         onChange={() =>
-                          toggleSelection(item.item_id)
+                          toggleSelection(
+                            item.item_id,
+                          )
                         }
+                        aria-label={`${item.keyword} 선택`}
                       />
                     </td>
+
                     <td>
                       <strong>{item.keyword}</strong>
+                      <div>
+                        {item.product_name ||
+                          "전체 피싱템 상품"}
+                      </div>
+                      {item.product_id && (
+                        <small>
+                          productId:{" "}
+                          {item.product_id}
+                        </small>
+                      )}
                     </td>
-                    <td>{item.product_name || "-"}</td>
+
                     <td>
-                      <strong className="latest-rank">
-                        {history?.latest_rank
-                          ? `${history.latest_rank}위`
-                          : "-"}
+                      <strong>
+                        {rank ? `${rank}위` : "-"}
                       </strong>
                     </td>
+
                     <td>
-                      <RankChangeBadge
-                        history={history}
-                      />
+                      {status === "error" ? (
+                        <span
+                          style={{
+                            display: "inline-block",
+                            borderRadius: "999px",
+                            padding: "5px 9px",
+                            background: "#fee2e2",
+                            color: "#991b1b",
+                            fontWeight: 800,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          ⚠️ 수집 오류
+                        </span>
+                      ) : status ===
+                        "no_history" ? (
+                        <span
+                          style={{
+                            display: "inline-block",
+                            borderRadius: "999px",
+                            padding: "5px 9px",
+                            background: "#f3f4f6",
+                            color: "#4b5563",
+                            fontWeight: 800,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          ➖ 기록 없음
+                        </span>
+                      ) : (
+                        <span
+                          style={{
+                            display: "inline-block",
+                            borderRadius: "999px",
+                            padding: "5px 9px",
+                            background:
+                              presentation.background,
+                            color:
+                              presentation.color,
+                            fontWeight: 800,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {presentation.label}
+                        </span>
+                      )}
                     </td>
+
+                    <td>
+                      {rankChangeText(history)}
+                    </td>
+
                     <td>
                       {history?.latest_collected_at ||
                         "-"}
                     </td>
-                    <td>{item.product_id || "-"}</td>
+
                     <td>{item.memo || "-"}</td>
-                    <td>{item.registered_at || "-"}</td>
+
+                    <td>
+                      {item.registered_at || "-"}
+                    </td>
                   </tr>
                 );
               })}
