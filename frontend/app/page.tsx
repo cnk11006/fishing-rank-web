@@ -94,6 +94,8 @@ export default function Home() {
   const [loginPending, setLoginPending] = useState(false);
   const [activeNavigation, setActiveNavigation] =
     useState<NavigationId>("rank");
+  const [visitedNavigations, setVisitedNavigations] =
+    useState<NavigationId[]>(["rank"]);
   const [loginMessage, setLoginMessage] = useState("");
 
   const sheetUrl =
@@ -307,7 +309,14 @@ export default function Home() {
                 ? "navigation-button active"
                 : "navigation-button"
             }
-            onClick={() => setActiveNavigation(item.id)}
+            onClick={() => {
+              setActiveNavigation(item.id);
+              setVisitedNavigations((current) =>
+                current.includes(item.id)
+                  ? current
+                  : [...current, item.id],
+              );
+            }}
           >
             <span>{item.icon}</span>
             <span>{item.label}</span>
@@ -325,25 +334,95 @@ export default function Home() {
           </div>
         </div>
 
-        {activeNavigation === "rank" ? (
-          <RankSearchPreview />
-        ) : activeNavigation === "monitoring" ? (
-          <MonitoringManager />
-        ) : activeNavigation === "keywords" ? (
-          <KeywordAnalysis />
-        ) : activeNavigation === "advertising" ? (
-          <AdvertisingDiagnosis />
-        ) : activeNavigation === "cross-purchase" ? (
-          <CrossPurchaseAnalysis />
-        ) : activeNavigation === "candidates" ? (
-          <CandidateAnalysis />
-        ) : activeNavigation === "data" ? (
-          <DataManagement />
-        ) : (
-          <FeaturePreview
-            icon={activeItem.icon}
-            name={activeItem.label}
-          />
+        {visitedNavigations.includes("rank") && (
+          <div
+            style={{
+              display:
+                activeNavigation === "rank"
+                  ? "block"
+                  : "none",
+            }}
+          >
+            <RankSearchPreview />
+          </div>
+        )}
+
+        {visitedNavigations.includes("monitoring") && (
+          <div
+            style={{
+              display:
+                activeNavigation === "monitoring"
+                  ? "block"
+                  : "none",
+            }}
+          >
+            <MonitoringManager />
+          </div>
+        )}
+
+        {visitedNavigations.includes("keywords") && (
+          <div
+            style={{
+              display:
+                activeNavigation === "keywords"
+                  ? "block"
+                  : "none",
+            }}
+          >
+            <KeywordAnalysis />
+          </div>
+        )}
+
+        {visitedNavigations.includes("advertising") && (
+          <div
+            style={{
+              display:
+                activeNavigation === "advertising"
+                  ? "block"
+                  : "none",
+            }}
+          >
+            <AdvertisingDiagnosis />
+          </div>
+        )}
+
+        {visitedNavigations.includes("cross-purchase") && (
+          <div
+            style={{
+              display:
+                activeNavigation === "cross-purchase"
+                  ? "block"
+                  : "none",
+            }}
+          >
+            <CrossPurchaseAnalysis />
+          </div>
+        )}
+
+        {visitedNavigations.includes("candidates") && (
+          <div
+            style={{
+              display:
+                activeNavigation === "candidates"
+                  ? "block"
+                  : "none",
+            }}
+          >
+            <CandidateAnalysis />
+          </div>
+        )}
+
+        {visitedNavigations.includes("data") && (
+          <div
+            style={{
+              display:
+                activeNavigation === "data"
+                  ? "block"
+                  : "none",
+            }}
+          >
+            <DataManagement />
+          </div>
         )}
       </section>
 
@@ -2479,6 +2558,16 @@ function AdvertisingDiagnosis() {
   >("campaigns");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [campaignQuery, setCampaignQuery] =
+    useState("");
+  const [
+    selectedCampaignIds,
+    setSelectedCampaignIds,
+  ] = useState<string[]>([]);
+  const [
+    selectedAdgroupIds,
+    setSelectedAdgroupIds,
+  ] = useState<string[]>([]);
 
   async function loadAdvertising() {
     setLoading(true);
@@ -2487,7 +2576,30 @@ function AdvertisingDiagnosis() {
     try {
       const response =
         await getAdvertisingOverview();
+
       setResult(response);
+
+      const campaignIds = new Set(
+        response.campaigns.map(
+          (campaign) => campaign.campaign_id,
+        ),
+      );
+      const adgroupIds = new Set(
+        response.adgroups.map(
+          (adgroup) => adgroup.adgroup_id,
+        ),
+      );
+
+      setSelectedCampaignIds((current) =>
+        current.filter((id) =>
+          campaignIds.has(id),
+        ),
+      );
+      setSelectedAdgroupIds((current) =>
+        current.filter((id) =>
+          adgroupIds.has(id),
+        ),
+      );
     } catch (requestError) {
       setResult(null);
       setError(
@@ -2537,53 +2649,136 @@ function AdvertisingDiagnosis() {
     return null;
   }
 
+  const normalizedQuery =
+    campaignQuery.trim().toLocaleLowerCase();
+
+  const filteredCampaigns =
+    result.campaigns.filter((campaign) =>
+      !normalizedQuery
+        ? true
+        : campaign.name
+            .toLocaleLowerCase()
+            .includes(normalizedQuery),
+    );
+
+  const selectedCampaigns =
+    result.campaigns.filter((campaign) =>
+      selectedCampaignIds.includes(
+        campaign.campaign_id,
+      ),
+    );
+
+  const availableAdgroups =
+    result.adgroups.filter((adgroup) =>
+      selectedCampaignIds.includes(
+        adgroup.campaign_id,
+      ),
+    );
+
+  const selectedAdgroups =
+    result.adgroups.filter((adgroup) =>
+      selectedAdgroupIds.includes(
+        adgroup.adgroup_id,
+      ),
+    );
+
+  const selectedActiveCampaignCount =
+    selectedCampaigns.filter(
+      (campaign) => campaign.status === "active",
+    ).length;
+
+  const selectedActiveAdgroupCount =
+    selectedAdgroups.filter(
+      (adgroup) => adgroup.status === "active",
+    ).length;
+
+  function toggleCampaign(
+    campaignId: string,
+  ) {
+    setSelectedCampaignIds((current) => {
+      if (current.includes(campaignId)) {
+        setSelectedAdgroupIds(
+          (currentAdgroups) =>
+            currentAdgroups.filter(
+              (adgroupId) => {
+                const adgroup =
+                  result?.adgroups.find(
+                    (item) =>
+                      item.adgroup_id ===
+                      adgroupId,
+                  );
+
+                return (
+                  adgroup?.campaign_id !==
+                  campaignId
+                );
+              },
+            ),
+        );
+
+        return current.filter(
+          (id) => id !== campaignId,
+        );
+      }
+
+      return [...current, campaignId];
+    });
+  }
+
+  function selectFilteredCampaigns() {
+    const filteredIds =
+      filteredCampaigns.map(
+        (campaign) => campaign.campaign_id,
+      );
+
+    setSelectedCampaignIds((current) =>
+      Array.from(
+        new Set([...current, ...filteredIds]),
+      ),
+    );
+  }
+
+  function clearCampaignSelection() {
+    setSelectedCampaignIds([]);
+    setSelectedAdgroupIds([]);
+  }
+
+  function toggleAdgroup(adgroupId: string) {
+    setSelectedAdgroupIds((current) =>
+      current.includes(adgroupId)
+        ? current.filter(
+            (id) => id !== adgroupId,
+          )
+        : [...current, adgroupId],
+    );
+  }
+
+  function selectAvailableAdgroups() {
+    setSelectedAdgroupIds(
+      availableAdgroups.map(
+        (adgroup) => adgroup.adgroup_id,
+      ),
+    );
+  }
+
   return (
     <>
       <div className="advertising-toolbar">
         <span>
-          마지막 조회 처리시간{" "}
-          {result.elapsed_seconds}초
+          전체 데이터는 최초 한 번만 불러옵니다.{" "}
+          캠페인 {result.summary.campaign_count}개 ·{" "}
+          광고그룹 {result.summary.adgroup_count}개 ·{" "}
+          처리시간 {result.elapsed_seconds}초
         </span>
 
         <button
           type="button"
           className="secondary-button"
           onClick={() => void loadAdvertising()}
+          disabled={loading}
         >
-          새로고침
+          서버 데이터 새로고침
         </button>
-      </div>
-
-      <div className="metric-grid">
-        <article className="metric-card">
-          <span>전체 캠페인</span>
-          <strong>
-            {result.summary.campaign_count}
-          </strong>
-        </article>
-
-        <article className="metric-card">
-          <span>활성·중지 캠페인</span>
-          <strong>
-            {result.summary.active_campaign_count} ·{" "}
-            {result.summary.paused_campaign_count}
-          </strong>
-        </article>
-
-        <article className="metric-card">
-          <span>전체 광고그룹</span>
-          <strong>
-            {result.summary.adgroup_count}
-          </strong>
-        </article>
-
-        <article className="metric-card">
-          <span>활성·중지 광고그룹</span>
-          <strong>
-            {result.summary.active_adgroup_count} ·{" "}
-            {result.summary.paused_adgroup_count}
-          </strong>
-        </article>
       </div>
 
       {result.summary.error_count > 0 && (
@@ -2593,6 +2788,40 @@ function AdvertisingDiagnosis() {
           {result.summary.error_count}건
         </div>
       )}
+
+      <div className="metric-grid">
+        <article className="metric-card">
+          <span>선택 캠페인</span>
+          <strong>
+            {selectedCampaigns.length}개
+          </strong>
+        </article>
+
+        <article className="metric-card">
+          <span>선택 캠페인 활성·중지</span>
+          <strong>
+            {selectedActiveCampaignCount} ·{" "}
+            {selectedCampaigns.length -
+              selectedActiveCampaignCount}
+          </strong>
+        </article>
+
+        <article className="metric-card">
+          <span>선택 광고그룹</span>
+          <strong>
+            {selectedAdgroups.length}개
+          </strong>
+        </article>
+
+        <article className="metric-card">
+          <span>선택 광고그룹 활성·중지</span>
+          <strong>
+            {selectedActiveAdgroupCount} ·{" "}
+            {selectedAdgroups.length -
+              selectedActiveAdgroupCount}
+          </strong>
+        </article>
+      </div>
 
       <div className="analysis-tabs">
         <button
@@ -2606,7 +2835,7 @@ function AdvertisingDiagnosis() {
             setActiveTab("campaigns")
           }
         >
-          캠페인
+          캠페인 선택 ({selectedCampaigns.length})
         </button>
 
         <button
@@ -2620,7 +2849,7 @@ function AdvertisingDiagnosis() {
             setActiveTab("adgroups")
           }
         >
-          광고그룹
+          광고그룹 선택 ({selectedAdgroups.length})
         </button>
 
         <button
@@ -2638,98 +2867,398 @@ function AdvertisingDiagnosis() {
         </button>
       </div>
 
-      {activeTab === "campaigns" ? (
-        <div className="table-scroll">
-          <table className="result-table">
-            <thead>
-              <tr>
-                <th>캠페인</th>
-                <th>유형</th>
-                <th>상태</th>
-                <th>일예산</th>
-                <th>수정일시</th>
-              </tr>
-            </thead>
+      <div
+        style={{
+          display:
+            activeTab === "campaigns"
+              ? "block"
+              : "none",
+        }}
+      >
+        <section
+          style={{
+            display: "grid",
+            gap: "16px",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              gap: "10px",
+              flexWrap: "wrap",
+              alignItems: "end",
+            }}
+          >
+            <label
+              style={{
+                flex: "1 1 260px",
+                display: "grid",
+                gap: "6px",
+              }}
+            >
+              <span>캠페인명 검색</span>
+              <input
+                type="search"
+                value={campaignQuery}
+                onChange={(event) =>
+                  setCampaignQuery(
+                    event.target.value,
+                  )
+                }
+                placeholder="캠페인명을 입력하세요"
+              />
+            </label>
 
-            <tbody>
-              {result.campaigns.map((campaign) => (
-                <tr key={campaign.campaign_id}>
-                  <td>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={selectFilteredCampaigns}
+              disabled={
+                filteredCampaigns.length === 0
+              }
+            >
+              검색 결과 전체 선택
+            </button>
+
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={clearCampaignSelection}
+              disabled={
+                selectedCampaignIds.length === 0
+              }
+            >
+              선택 해제
+            </button>
+          </div>
+
+          <div
+            style={{
+              maxHeight: "280px",
+              overflow: "auto",
+              border: "1px solid #e5e7eb",
+              borderRadius: "12px",
+              padding: "12px",
+              display: "grid",
+              gap: "8px",
+            }}
+          >
+            {filteredCampaigns.length === 0 ? (
+              <div className="empty-state compact-state">
+                <span>📭</span>
+                <h3>
+                  검색 조건에 맞는 캠페인이 없습니다.
+                </h3>
+              </div>
+            ) : (
+              filteredCampaigns.map(
+                (campaign) => (
+                  <label
+                    key={campaign.campaign_id}
+                    style={{
+                      display: "flex",
+                      gap: "10px",
+                      alignItems: "center",
+                      padding: "8px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedCampaignIds
+                        .includes(
+                          campaign.campaign_id,
+                        )}
+                      onChange={() =>
+                        toggleCampaign(
+                          campaign.campaign_id,
+                        )
+                      }
+                    />
                     <strong>{campaign.name}</strong>
-                  </td>
-                  <td>
-                    {campaign.campaign_type || "-"}
-                  </td>
-                  <td>
                     <AdvertisingStatus
                       status={campaign.status}
                     />
-                  </td>
-                  <td>
-                    {campaign.uses_daily_budget
-                      ? `${campaign.daily_budget
-                          .toLocaleString()}원`
-                      : "제한 없음"}
-                  </td>
-                  <td>
-                    {campaign.edited_at || "-"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : activeTab === "adgroups" ? (
-        <div className="table-scroll">
-          <table className="result-table">
-            <thead>
-              <tr>
-                <th>캠페인</th>
-                <th>광고그룹</th>
-                <th>상태</th>
-                <th>입찰가</th>
-                <th>일예산</th>
-                <th>상태 사유</th>
-              </tr>
-            </thead>
+                    <span>
+                      {campaign.campaign_type || "-"}
+                    </span>
+                  </label>
+                ),
+              )
+            )}
+          </div>
 
-            <tbody>
-              {result.adgroups.map((adgroup) => (
-                <tr key={adgroup.adgroup_id}>
-                  <td>{adgroup.campaign_name}</td>
-                  <td>
-                    <strong>{adgroup.name}</strong>
-                  </td>
-                  <td>
-                    <AdvertisingStatus
-                      status={adgroup.status}
-                    />
-                  </td>
-                  <td>
-                    {adgroup.bid_amount
-                      .toLocaleString()}원
-                  </td>
-                  <td>
-                    {adgroup.uses_daily_budget
-                      ? `${adgroup.daily_budget
-                          .toLocaleString()}원`
-                      : "제한 없음"}
-                  </td>
-                  <td>
-                    {adgroup.status_reason || "-"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
+          <h3>
+            선택한 캠페인 ({selectedCampaigns.length})
+          </h3>
+
+          {selectedCampaigns.length === 0 ? (
+            <div className="empty-state compact-state">
+              <span>☝️</span>
+              <h3>
+                확인할 캠페인을 선택해 주세요.
+              </h3>
+              <p>
+                선택한 캠페인만 아래 결과에 표시됩니다.
+              </p>
+            </div>
+          ) : (
+            <div className="table-scroll">
+              <table className="result-table">
+                <thead>
+                  <tr>
+                    <th>캠페인</th>
+                    <th>유형</th>
+                    <th>상태</th>
+                    <th>일예산</th>
+                    <th>수정일시</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {selectedCampaigns.map(
+                    (campaign) => (
+                      <tr
+                        key={campaign.campaign_id}
+                      >
+                        <td>
+                          <strong>
+                            {campaign.name}
+                          </strong>
+                        </td>
+                        <td>
+                          {campaign.campaign_type ||
+                            "-"}
+                        </td>
+                        <td>
+                          <AdvertisingStatus
+                            status={campaign.status}
+                          />
+                        </td>
+                        <td>
+                          {campaign.uses_daily_budget
+                            ? `${campaign.daily_budget
+                                .toLocaleString()}원`
+                            : "제한 없음"}
+                        </td>
+                        <td>
+                          {campaign.edited_at || "-"}
+                        </td>
+                      </tr>
+                    ),
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
+
+      <div
+        style={{
+          display:
+            activeTab === "adgroups"
+              ? "block"
+              : "none",
+        }}
+      >
+        {selectedCampaigns.length === 0 ? (
+          <div className="empty-state compact-state">
+            <span>☝️</span>
+            <h3>캠페인을 먼저 선택해 주세요.</h3>
+            <p>
+              캠페인 선택 탭에서 한 개 이상의
+              캠페인을 선택하면 광고그룹이 표시됩니다.
+            </p>
+          </div>
+        ) : (
+          <section
+            style={{
+              display: "grid",
+              gap: "16px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                gap: "10px",
+                flexWrap: "wrap",
+                alignItems: "center",
+              }}
+            >
+              <strong>
+                선택 캠페인의 광고그룹{" "}
+                {availableAdgroups.length}개
+              </strong>
+
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={selectAvailableAdgroups}
+                disabled={
+                  availableAdgroups.length === 0
+                }
+              >
+                전체 선택
+              </button>
+
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() =>
+                  setSelectedAdgroupIds([])
+                }
+                disabled={
+                  selectedAdgroupIds.length === 0
+                }
+              >
+                선택 해제
+              </button>
+            </div>
+
+            <div
+              style={{
+                maxHeight: "300px",
+                overflow: "auto",
+                border: "1px solid #e5e7eb",
+                borderRadius: "12px",
+                padding: "12px",
+                display: "grid",
+                gap: "8px",
+              }}
+            >
+              {availableAdgroups.length === 0 ? (
+                <div className="empty-state compact-state">
+                  <span>📭</span>
+                  <h3>
+                    선택한 캠페인에 광고그룹이 없습니다.
+                  </h3>
+                </div>
+              ) : (
+                availableAdgroups.map(
+                  (adgroup) => (
+                    <label
+                      key={adgroup.adgroup_id}
+                      style={{
+                        display: "flex",
+                        gap: "10px",
+                        alignItems: "center",
+                        padding: "8px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedAdgroupIds
+                          .includes(
+                            adgroup.adgroup_id,
+                          )}
+                        onChange={() =>
+                          toggleAdgroup(
+                            adgroup.adgroup_id,
+                          )
+                        }
+                      />
+                      <span>
+                        {adgroup.campaign_name}
+                      </span>
+                      <strong>
+                        {adgroup.name}
+                      </strong>
+                      <AdvertisingStatus
+                        status={adgroup.status}
+                      />
+                    </label>
+                  ),
+                )
+              )}
+            </div>
+
+            <h3>
+              선택한 광고그룹 ({selectedAdgroups.length})
+            </h3>
+
+            {selectedAdgroups.length === 0 ? (
+              <div className="empty-state compact-state">
+                <span>☝️</span>
+                <h3>
+                  확인할 광고그룹을 선택해 주세요.
+                </h3>
+                <p>
+                  선택한 광고그룹만 아래 결과에 표시됩니다.
+                </p>
+              </div>
+            ) : (
+              <div className="table-scroll">
+                <table className="result-table">
+                  <thead>
+                    <tr>
+                      <th>캠페인</th>
+                      <th>광고그룹</th>
+                      <th>상태</th>
+                      <th>입찰가</th>
+                      <th>일예산</th>
+                      <th>상태 사유</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {selectedAdgroups.map(
+                      (adgroup) => (
+                        <tr
+                          key={adgroup.adgroup_id}
+                        >
+                          <td>
+                            {adgroup.campaign_name}
+                          </td>
+                          <td>
+                            <strong>
+                              {adgroup.name}
+                            </strong>
+                          </td>
+                          <td>
+                            <AdvertisingStatus
+                              status={adgroup.status}
+                            />
+                          </td>
+                          <td>
+                            {adgroup.bid_amount
+                              .toLocaleString()}원
+                          </td>
+                          <td>
+                            {adgroup.uses_daily_budget
+                              ? `${adgroup.daily_budget
+                                  .toLocaleString()}원`
+                              : "제한 없음"}
+                          </td>
+                          <td>
+                            {adgroup.status_reason ||
+                              "-"}
+                          </td>
+                        </tr>
+                      ),
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        )}
+      </div>
+
+      <div
+        style={{
+          display:
+            activeTab === "season"
+              ? "block"
+              : "none",
+        }}
+      >
         <SeasonAnalysisPanel />
-      )}
+      </div>
     </>
   );
 }
-
 
 function SeasonAnalysisPanel() {
   const [keyword, setKeyword] = useState("");
