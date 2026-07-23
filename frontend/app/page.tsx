@@ -301,9 +301,9 @@ export default function Home() {
       <section className="status-row">
         <span className="status-badge">
           <span className="status-dot" />
-          Netlify 웹 전환 작업 중
+          운영 시스템 정상
         </span>
-        <span>기존 Streamlit 프로그램은 정상 운영 중입니다.</span>
+        <span>순위·키워드·광고·상품 분석 기능을 이용할 수 있습니다.</span>
       </section>
 
       <nav className="main-navigation" aria-label="주요 메뉴">
@@ -434,7 +434,7 @@ export default function Home() {
       </section>
 
       <footer className="app-footer">
-        피싱템 내부 업무 시스템 · Netlify V2 전환 화면
+        피싱템 내부 업무 시스템
       </footer>
     </main>
   );

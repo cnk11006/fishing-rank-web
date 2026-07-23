@@ -1586,3 +1586,73 @@ button:disabled {
     grid-template-columns: 1fr !important;
   }
 }
+
+
+/* Shared form field rhythm */
+.search-panel .field-group,
+.keyword-analysis-form .field-group,
+.season-analysis-form .field-group,
+.cross-purchase-form .field-group,
+.candidate-form .field-group,
+.management-panel .field-group {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.search-panel .field-group > label,
+.keyword-analysis-form .field-group > label,
+.season-analysis-form .field-group > label,
+.cross-purchase-form .field-group > label,
+.candidate-form .field-group > label,
+.management-panel .field-group > label {
+  display: block;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.search-panel input:not([type="checkbox"]),
+.search-panel select,
+.keyword-analysis-form input,
+.keyword-analysis-form select,
+.season-analysis-form input,
+.season-analysis-form select,
+.cross-purchase-form input:not([type="checkbox"]),
+.cross-purchase-form select,
+.candidate-form input:not([type="checkbox"]),
+.candidate-form select,
+.management-panel input:not([type="checkbox"]),
+.management-panel select {
+  width: 100%;
+  min-height: 44px;
+}
+
+.search-panel input:focus-visible,
+.search-panel select:focus-visible,
+.keyword-analysis-form input:focus-visible,
+.keyword-analysis-form select:focus-visible,
+.season-analysis-form input:focus-visible,
+.season-analysis-form select:focus-visible,
+.cross-purchase-form input:focus-visible,
+.cross-purchase-form select:focus-visible,
+.candidate-form input:focus-visible,
+.candidate-form select:focus-visible,
+.management-panel input:focus-visible,
+.management-panel select:focus-visible {
+  border-color: var(--primary);
+  outline: 3px solid rgba(10, 132, 255, 0.14);
+  outline-offset: 0;
+}
+
+@media (max-width: 650px) {
+  .search-panel button,
+  .keyword-analysis-form button,
+  .season-analysis-form button,
+  .cross-purchase-form button,
+  .candidate-form button,
+  .management-panel button {
+    width: 100%;
+  }
+}
