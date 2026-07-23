@@ -23,6 +23,7 @@ import {
   getMonitoringHistory,
   analyzeKeywords,
   getAdvertisingOverview,
+  diagnoseAdvertising,
   analyzeSeason,
   analyzeCrossPurchase,
   analyzeCandidates,
@@ -39,6 +40,7 @@ import type {
   MonitoringHistoryItem,
   KeywordAnalysisResponse,
   AdvertisingOverviewResponse,
+  AdvertisingDiagnosisResponse,
   SeasonAnalysisResponse,
   CrossPurchaseResponse,
   CandidateAnalysisResponse,
@@ -3438,6 +3440,25 @@ function AdvertisingDiagnosis() {
     selectedAdgroupIds,
     setSelectedAdgroupIds,
   ] = useState<string[]>([]);
+  const [diagnosisMode, setDiagnosisMode] =
+    useState<"selected" | "all">("selected");
+  const [diagnosisDays, setDiagnosisDays] =
+    useState<7 | 14 | 30>(7);
+  const [
+    excludeOffCampaigns,
+    setExcludeOffCampaigns,
+  ] = useState(true);
+  const [diagnosisPending, setDiagnosisPending] =
+    useState(false);
+  const [diagnosisError, setDiagnosisError] =
+    useState("");
+  const [
+    diagnosisResult,
+    setDiagnosisResult,
+  ] =
+    useState<AdvertisingDiagnosisResponse | null>(
+      null,
+    );
 
   async function loadAdvertising() {
     setLoading(true);
@@ -3485,6 +3506,148 @@ function AdvertisingDiagnosis() {
   useEffect(() => {
     void loadAdvertising();
   }, []);
+
+  async function handleAdvertisingDiagnosis() {
+    if (
+      diagnosisMode === "selected" &&
+      selectedAdgroupIds.length === 0
+    ) {
+      setDiagnosisError(
+        "진단할 광고그룹을 한 개 이상 선택해 주세요.",
+      );
+      setActiveTab("adgroups");
+      return;
+    }
+
+    const selectedGroups =
+      result?.adgroups.filter((adgroup) =>
+        selectedAdgroupIds.includes(
+          adgroup.adgroup_id,
+        ),
+      ) ?? [];
+
+    const targetMap = new Map<string, string[]>();
+
+    for (const adgroup of selectedGroups) {
+      const ids =
+        targetMap.get(adgroup.campaign_id) ?? [];
+      ids.push(adgroup.adgroup_id);
+      targetMap.set(adgroup.campaign_id, ids);
+    }
+
+    const targets = Array.from(
+      targetMap.entries(),
+    ).map(([campaignId, adgroupIds]) => ({
+      campaign_id: campaignId,
+      adgroup_ids: adgroupIds,
+    }));
+
+    setDiagnosisPending(true);
+    setDiagnosisError("");
+
+    try {
+      const response = await diagnoseAdvertising({
+        mode: diagnosisMode,
+        targets:
+          diagnosisMode === "selected"
+            ? targets
+            : [],
+        days: diagnosisDays,
+        exclude_off_campaigns:
+          excludeOffCampaigns,
+      });
+
+      setDiagnosisResult(response);
+    } catch (requestError) {
+      setDiagnosisResult(null);
+      setDiagnosisError(
+        requestError instanceof ApiError
+          ? requestError.message
+          : "광고 진단 서버에 연결하지 못했습니다.",
+      );
+    } finally {
+      setDiagnosisPending(false);
+    }
+  }
+
+  function downloadDiagnosisCsv() {
+    if (!diagnosisResult) {
+      return;
+    }
+
+    const headers = [
+      "상태",
+      "우선순위",
+      "캠페인",
+      "광고그룹",
+      "상품명",
+      "ON/OFF",
+      "입찰가",
+      "품질지수",
+      "노출",
+      "클릭",
+      "CTR",
+      "평균순위",
+      "비용",
+      "전환",
+      "진단",
+      "개선 조언",
+    ];
+
+    const values = diagnosisResult.rows.map(
+      (row) => [
+        row.status_icon,
+        row.priority,
+        row.campaign_name,
+        row.adgroup_name,
+        row.product_name,
+        row.active ? "ON" : "OFF",
+        row.bid_amount,
+        row.quality_grade,
+        row.impressions,
+        row.clicks,
+        row.ctr,
+        row.average_rank,
+        row.cost,
+        row.conversions,
+        row.verdict,
+        row.advice,
+      ],
+    );
+
+    const escapeCsv = (value: unknown) =>
+      `"${String(value ?? "").replace(
+        /"/g,
+        '""',
+      )}"`;
+
+    const csv = [headers, ...values]
+      .map((row) =>
+        row.map(escapeCsv).join(","),
+      )
+      .join("\n");
+
+    const blob = new Blob(
+      ["\uFEFF", csv],
+      {
+        type: "text/csv;charset=utf-8",
+      },
+    );
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    const timestamp =
+      diagnosisResult.collected_at
+        .replace(/[^0-9]/g, "")
+        .slice(0, 14);
+
+    anchor.href = url;
+    anchor.download =
+      `광고진단_${timestamp || "result"}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }
 
   if (loading) {
     return (
@@ -4112,6 +4275,492 @@ function AdvertisingDiagnosis() {
                 </table>
               </div>
             )}
+          </section>
+        )}
+      </div>
+
+      <div
+        style={{
+          display:
+            activeTab === "adgroups"
+              ? "block"
+              : "none",
+          marginTop: "20px",
+        }}
+      >
+        <section
+          className="search-panel"
+          style={{
+            display: "grid",
+            gap: "16px",
+          }}
+        >
+          <div>
+            <p className="eyebrow">
+              NAVER AD DIAGNOSIS
+            </p>
+            <h3 style={{ margin: "0 0 8px" }}>
+              실제 광고 성과 진단
+            </h3>
+            <p
+              style={{
+                margin: 0,
+                color: "#667085",
+                lineHeight: 1.6,
+              }}
+            >
+              선택한 광고그룹 또는 전체 쇼핑 광고의
+              노출·클릭·순위·품질·비용을 분석합니다.
+            </p>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(180px, 1fr))",
+              gap: "12px",
+            }}
+          >
+            <div className="field-group">
+              <label htmlFor="diagnosis-mode">
+                진단 범위
+              </label>
+              <select
+                id="diagnosis-mode"
+                value={diagnosisMode}
+                onChange={(event) =>
+                  setDiagnosisMode(
+                    event.target.value as
+                      | "selected"
+                      | "all",
+                  )
+                }
+                disabled={diagnosisPending}
+              >
+                <option value="selected">
+                  선택한 광고그룹
+                </option>
+                <option value="all">
+                  전체 쇼핑 광고
+                </option>
+              </select>
+            </div>
+
+            <div className="field-group">
+              <label htmlFor="diagnosis-days">
+                진단 기간
+              </label>
+              <select
+                id="diagnosis-days"
+                value={diagnosisDays}
+                onChange={(event) =>
+                  setDiagnosisDays(
+                    Number(event.target.value) as
+                      | 7
+                      | 14
+                      | 30,
+                  )
+                }
+                disabled={diagnosisPending}
+              >
+                <option value={7}>최근 7일</option>
+                <option value={14}>최근 14일</option>
+                <option value={30}>최근 30일</option>
+              </select>
+            </div>
+
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "9px",
+                minHeight: "48px",
+                alignSelf: "end",
+                fontWeight: 700,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={excludeOffCampaigns}
+                onChange={(event) =>
+                  setExcludeOffCampaigns(
+                    event.target.checked,
+                  )
+                }
+                disabled={diagnosisPending}
+              />
+              중지 캠페인 제외
+            </label>
+          </div>
+
+          {diagnosisMode === "selected" && (
+            <div className="info-message">
+              현재 선택된 광고그룹{" "}
+              <strong>
+                {selectedAdgroupIds.length}개
+              </strong>
+              를 진단합니다.
+            </div>
+          )}
+
+          {diagnosisMode === "all" && (
+            <div className="info-message">
+              전체 쇼핑 광고를 대상으로 진단합니다.
+              광고 수에 따라 시간이 다소 걸릴 수 있습니다.
+            </div>
+          )}
+
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "10px",
+            }}
+          >
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() =>
+                void handleAdvertisingDiagnosis()
+              }
+              disabled={
+                diagnosisPending ||
+                (diagnosisMode === "selected" &&
+                  selectedAdgroupIds.length === 0)
+              }
+            >
+              {diagnosisPending
+                ? "광고 진단 중..."
+                : "🔎 광고 진단 실행"}
+            </button>
+
+            {diagnosisResult && (
+              <>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={downloadDiagnosisCsv}
+                  disabled={diagnosisPending}
+                >
+                  CSV 다운로드
+                </button>
+
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => {
+                    setDiagnosisResult(null);
+                    setDiagnosisError("");
+                  }}
+                  disabled={diagnosisPending}
+                >
+                  결과 지우기
+                </button>
+              </>
+            )}
+          </div>
+        </section>
+
+        {diagnosisError && (
+          <div className="error-message">
+            {diagnosisError}
+          </div>
+        )}
+
+        {diagnosisPending && (
+          <div className="empty-state compact-state">
+            <span>⏳</span>
+            <h3>광고 성과를 진단하고 있습니다.</h3>
+            <p>
+              광고와 통계 조회 후 결과를 저장하는 중입니다.
+              창을 닫지 말고 기다려 주세요.
+            </p>
+          </div>
+        )}
+
+        {diagnosisResult && !diagnosisPending && (
+          <section
+            className="rank-results"
+            style={{
+              display: "grid",
+              gap: "18px",
+            }}
+          >
+            <div className="result-summary">
+              진단 시각:{" "}
+              {diagnosisResult.collected_at} · 최근{" "}
+              {diagnosisResult.days}일 · 소요{" "}
+              {diagnosisResult.elapsed_seconds.toLocaleString()}
+              초
+            </div>
+
+            <div className="metric-grid">
+              <article className="metric-card">
+                <span>진단 광고</span>
+                <strong>
+                  {diagnosisResult.total_ads.toLocaleString()}
+                  개
+                </strong>
+              </article>
+
+              <article className="metric-card">
+                <span>총 노출</span>
+                <strong>
+                  {diagnosisResult.total_impressions.toLocaleString()}
+                </strong>
+              </article>
+
+              <article className="metric-card">
+                <span>총 클릭</span>
+                <strong>
+                  {diagnosisResult.total_clicks.toLocaleString()}
+                </strong>
+              </article>
+
+              <article className="metric-card">
+                <span>총 비용</span>
+                <strong>
+                  {diagnosisResult.total_cost.toLocaleString()}
+                  원
+                </strong>
+              </article>
+
+              <article className="metric-card">
+                <span>긴급 점검</span>
+                <strong>
+                  {diagnosisResult.urgent_count.toLocaleString()}
+                  개
+                </strong>
+              </article>
+
+              <article className="metric-card">
+                <span>저장 결과</span>
+                <strong>
+                  {diagnosisResult.saved_count.toLocaleString()}
+                  건
+                </strong>
+              </article>
+            </div>
+
+            {diagnosisResult.save_message && (
+              <div className="info-message">
+                {diagnosisResult.save_message}
+              </div>
+            )}
+
+            {diagnosisResult.errors.length > 0 && (
+              <div className="error-message">
+                <strong>
+                  일부 광고 조회 오류{" "}
+                  {diagnosisResult.errors.length}건
+                </strong>
+                <ul
+                  style={{
+                    marginBottom: 0,
+                    paddingLeft: "20px",
+                  }}
+                >
+                  {diagnosisResult.errors.map(
+                    (message, index) => (
+                      <li key={`${message}-${index}`}>
+                        {message}
+                      </li>
+                    ),
+                  )}
+                </ul>
+              </div>
+            )}
+
+            <div>
+              <h3>우선 점검 광고 TOP 5</h3>
+
+              {diagnosisResult.rows.length === 0 ? (
+                <div className="empty-state compact-state">
+                  <span>📭</span>
+                  <h3>진단 결과가 없습니다.</h3>
+                </div>
+              ) : (
+                <div className="table-scroll">
+                  <table className="result-table">
+                    <thead>
+                      <tr>
+                        <th>상태</th>
+                        <th>상품명</th>
+                        <th>캠페인</th>
+                        <th>광고그룹</th>
+                        <th>진단</th>
+                        <th>개선 조언</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...diagnosisResult.rows]
+                        .sort(
+                          (left, right) =>
+                            right.priority -
+                            left.priority,
+                        )
+                        .slice(0, 5)
+                        .map((row) => (
+                          <tr key={`top-${row.ad_id}`}>
+                            <td>{row.status_icon}</td>
+                            <td>
+                              <strong>
+                                {row.product_name || "-"}
+                              </strong>
+                            </td>
+                            <td>
+                              {row.campaign_name || "-"}
+                            </td>
+                            <td>
+                              {row.adgroup_name || "-"}
+                            </td>
+                            <td>{row.verdict || "-"}</td>
+                            <td>{row.advice || "-"}</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <h3>
+                이전 진단 대비 악화 항목 (
+                {diagnosisResult.changes.length})
+              </h3>
+
+              {diagnosisResult.previous_collected_at && (
+                <p className="result-summary">
+                  비교 기준:{" "}
+                  {diagnosisResult.previous_collected_at}
+                </p>
+              )}
+
+              {diagnosisResult.changes.length === 0 ? (
+                <div className="info-message">
+                  이전 진단 대비 악화된 항목이 없습니다.
+                </div>
+              ) : (
+                <div className="table-scroll">
+                  <table className="result-table">
+                    <thead>
+                      <tr>
+                        <th>상품명</th>
+                        <th>캠페인</th>
+                        <th>변화</th>
+                        <th>심각도</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {diagnosisResult.changes.map(
+                        (change, index) => (
+                          <tr
+                            key={`${change.ad_id}-${index}`}
+                          >
+                            <td>
+                              <strong>
+                                {change.product_name || "-"}
+                              </strong>
+                            </td>
+                            <td>
+                              {change.campaign_name || "-"}
+                            </td>
+                            <td>{change.change}</td>
+                            <td>{change.severity}</td>
+                          </tr>
+                        ),
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <h3>
+                전체 광고 성과 (
+                {diagnosisResult.rows.length})
+              </h3>
+
+              <div className="table-scroll">
+                <table className="result-table">
+                  <thead>
+                    <tr>
+                      <th>상태</th>
+                      <th>캠페인</th>
+                      <th>광고그룹</th>
+                      <th>상품명</th>
+                      <th>ON/OFF</th>
+                      <th>입찰가</th>
+                      <th>품질</th>
+                      <th>노출</th>
+                      <th>클릭</th>
+                      <th>CTR</th>
+                      <th>평균순위</th>
+                      <th>비용</th>
+                      <th>전환</th>
+                      <th>진단</th>
+                      <th>개선 조언</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {diagnosisResult.rows.map(
+                      (row) => (
+                        <tr key={row.ad_id}>
+                          <td>{row.status_icon}</td>
+                          <td>
+                            {row.campaign_name || "-"}
+                          </td>
+                          <td>
+                            {row.adgroup_name || "-"}
+                          </td>
+                          <td>
+                            <strong>
+                              {row.product_name || "-"}
+                            </strong>
+                          </td>
+                          <td>
+                            {row.active ? "ON" : "OFF"}
+                          </td>
+                          <td>
+                            {row.bid_amount.toLocaleString()}
+                            원
+                          </td>
+                          <td>
+                            {row.quality_grade || "-"}
+                          </td>
+                          <td>
+                            {row.impressions.toLocaleString()}
+                          </td>
+                          <td>
+                            {row.clicks.toLocaleString()}
+                          </td>
+                          <td>
+                            {row.ctr.toFixed(2)}%
+                          </td>
+                          <td>
+                            {row.average_rank > 0
+                              ? row.average_rank.toFixed(1)
+                              : "-"}
+                          </td>
+                          <td>
+                            {row.cost.toLocaleString()}원
+                          </td>
+                          <td>
+                            {row.conversions.toLocaleString()}
+                          </td>
+                          <td>{row.verdict || "-"}</td>
+                          <td>{row.advice || "-"}</td>
+                        </tr>
+                      ),
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </section>
         )}
       </div>

@@ -423,6 +423,72 @@ export function getAdvertisingOverview() {
 }
 
 
+export type AdvertisingDiagnosisTarget = {
+  campaign_id: string;
+  adgroup_ids: string[];
+};
+
+export type AdvertisingDiagnosisRow = {
+  ad_id: string;
+  status_icon: string;
+  priority: number;
+  campaign_name: string;
+  adgroup_name: string;
+  product_name: string;
+  active: boolean;
+  bid_amount: number;
+  quality_grade: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  average_rank: number;
+  cost: number;
+  conversions: number;
+  verdict: string;
+  advice: string;
+};
+
+export type AdvertisingDiagnosisChange = {
+  ad_id: string;
+  product_name: string;
+  campaign_name: string;
+  change: string;
+  severity: number;
+};
+
+export type AdvertisingDiagnosisResponse = {
+  collected_at: string;
+  previous_collected_at: string | null;
+  days: number;
+  total_ads: number;
+  total_impressions: number;
+  total_clicks: number;
+  total_cost: number;
+  urgent_count: number;
+  saved_count: number;
+  save_message: string;
+  errors: string[];
+  changes: AdvertisingDiagnosisChange[];
+  rows: AdvertisingDiagnosisRow[];
+  elapsed_seconds: number;
+};
+
+export function diagnoseAdvertising(input: {
+  mode: "selected" | "all";
+  targets: AdvertisingDiagnosisTarget[];
+  days: 7 | 14 | 30;
+  exclude_off_campaigns: boolean;
+}) {
+  return apiRequest<AdvertisingDiagnosisResponse>(
+    "/api/advertising/diagnose",
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+
 
 export type SeasonMonthlyItem = {
   period: string;
