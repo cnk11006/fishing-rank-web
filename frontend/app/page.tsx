@@ -1970,8 +1970,8 @@ function MonitoringManager() {
           </p>
         </div>
       ) : (
-        <div className="table-scroll">
-          <table className="result-table">
+        <div className="table-scroll monitoring-table-scroll">
+          <table className="result-table monitoring-result-table">
             <thead>
               <tr>
                 <th>
