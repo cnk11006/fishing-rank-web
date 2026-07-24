@@ -850,3 +850,92 @@ export function clearApplicationCaches() {
     },
   );
 }
+
+
+export type ProductNameMode = "new" | "existing";
+
+export type ProductLinkResolveResponse = {
+  resolved: boolean;
+  product_url: string;
+  product_id: string;
+  current_title: string;
+  suggested_main_keyword: string;
+  message: string;
+};
+
+export type ProductNameKeywordSuggestion = {
+  keyword: string;
+  total_volume: number;
+  competition: string;
+  representative_category: string;
+};
+
+export type ProductNameCandidate = {
+  style: "간결형" | "균형형" | "확장형";
+  title: string;
+  score: number;
+  length: number;
+  reason: string;
+  used_keywords: string[];
+  warnings: string[];
+  changes: {
+    kept: string[];
+    added: string[];
+    removed: string[];
+  };
+};
+
+export type ProductNameRecommendationResponse = {
+  mode: ProductNameMode;
+  main_keyword: string;
+  product_type: string;
+  brand: string;
+  model_name: string;
+  current_title: string;
+  product_url: string;
+  representative_category: string;
+  current_title_warnings: string[];
+  keyword_suggestions: ProductNameKeywordSuggestion[];
+  competitor_titles: {
+    rank: number;
+    title: string;
+    mall_name: string;
+  }[];
+  candidates: ProductNameCandidate[];
+  warnings: string[];
+};
+
+export function resolveProductLink(
+  productUrl: string,
+) {
+  return apiRequest<ProductLinkResolveResponse>(
+    "/api/product-names/resolve",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        product_url: productUrl,
+      }),
+    },
+  );
+}
+
+export function recommendProductNames(input: {
+  mode: ProductNameMode;
+  main_keyword: string;
+  product_type: string;
+  brand: string;
+  model_name: string;
+  features: string[];
+  required_words: string[];
+  excluded_words: string[];
+  current_title: string;
+  product_url: string;
+}) {
+  return apiRequest<ProductNameRecommendationResponse>(
+    "/api/product-names/recommend",
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}

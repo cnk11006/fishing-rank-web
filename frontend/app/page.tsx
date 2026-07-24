@@ -15,7 +15,6 @@ import {
   searchRank,
   saveSelectedRankItems,
   getMonitoringList,
-  addMonitoringItem,
   updateMonitoringItem,
   deleteMonitoringItems,
   collectMonitoringRanks,
@@ -23,6 +22,8 @@ import {
   getMonitoringHistory,
   analyzeKeywords,
   exportKeywordAnalysisExcel,
+  resolveProductLink,
+  recommendProductNames,
   getAdvertisingOverview,
   diagnoseAdvertising,
   analyzeSeason,
@@ -40,6 +41,8 @@ import type {
   MonitoringCollectResponse,
   MonitoringHistoryItem,
   KeywordAnalysisResponse,
+  ProductNameMode,
+  ProductNameRecommendationResponse,
   AdvertisingOverviewResponse,
   AdvertisingDiagnosisResponse,
   SeasonAnalysisResponse,
@@ -68,6 +71,12 @@ const navigationItems = [
     icon: "📊",
     label: "키워드 분석",
     description: "검색량·연관 키워드·대표 카테고리를 분석합니다.",
+  },
+  {
+    id: "product-name",
+    icon: "✍️",
+    label: "상품명 SEO 추천",
+    description: "신제품 상품명을 만들거나 기존 상품명을 진단·개선합니다.",
   },
   {
     id: "advertising",
@@ -380,6 +389,19 @@ export default function Home() {
             }}
           >
             <KeywordAnalysis />
+          </div>
+        )}
+
+        {visitedNavigations.includes("product-name") && (
+          <div
+            style={{
+              display:
+                activeNavigation === "product-name"
+                  ? "block"
+                  : "none",
+            }}
+          >
+            <ProductNameSeo />
           </div>
         )}
 
@@ -1134,48 +1156,6 @@ function MonitoringManager() {
     void loadItems();
   }, []);
 
-  async function handleAdd(
-    event: FormEvent<HTMLFormElement>,
-  ) {
-    event.preventDefault();
-
-    const form = event.currentTarget;
-    const formData = new FormData(form);
-
-    setActionPending(true);
-    setMessage("");
-    setError("");
-
-    try {
-      const result = await addMonitoringItem({
-        keyword: String(
-          formData.get("keyword") ?? "",
-        ).trim(),
-        memo: String(
-          formData.get("memo") ?? "",
-        ).trim(),
-        product_id: String(
-          formData.get("product_id") ?? "",
-        ).trim(),
-        product_name: String(
-          formData.get("product_name") ?? "",
-        ).trim(),
-      });
-
-      form.reset();
-      await loadItems();
-      setMessage(result.message);
-    } catch (requestError) {
-      setError(
-        requestError instanceof ApiError
-          ? requestError.message
-          : "모니터링 항목을 등록하지 못했습니다.",
-      );
-    } finally {
-      setActionPending(false);
-    }
-  }
-
   async function handleDelete() {
     if (selectedIds.length === 0) {
       setError("삭제할 항목을 선택해 주세요.");
@@ -1536,82 +1516,6 @@ function MonitoringManager() {
 
   return (
     <>
-      <form
-        className="monitoring-add-form"
-        onSubmit={handleAdd}
-      >
-        <label>
-          키워드
-          <input
-            name="keyword"
-            type="text"
-            placeholder="예: 낚시의자"
-            disabled={actionPending}
-            required
-          />
-        </label>
-
-        <label>
-          메모
-          <input
-            name="memo"
-            type="text"
-            placeholder="선택 입력"
-            disabled={actionPending}
-          />
-        </label>
-
-        <details>
-          <summary
-            style={{
-              cursor: "pointer",
-              fontWeight: 700,
-              marginBottom: "10px",
-            }}
-          >
-            고급 상품 지정
-          </summary>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns:
-                "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: "12px",
-            }}
-          >
-            <label>
-              productId
-              <input
-                name="product_id"
-                type="text"
-                placeholder="특정 상품 추적 시 입력"
-                disabled={actionPending}
-              />
-            </label>
-
-            <label>
-              상품명
-              <input
-                name="product_name"
-                type="text"
-                placeholder="특정 상품 추적 시 입력"
-                disabled={actionPending}
-              />
-            </label>
-          </div>
-        </details>
-
-        <button
-          type="submit"
-          className="primary-button"
-          disabled={actionPending}
-        >
-          {actionPending
-            ? "처리 중..."
-            : "＋ 모니터링 등록"}
-        </button>
-      </form>
 
       {editingItem && (
         <form
@@ -2378,6 +2282,801 @@ function MonitoringManager() {
         </div>
       )}
     </>
+  );
+}
+
+function ProductNameSeo() {
+  const [mode, setMode] =
+    useState<ProductNameMode>("new");
+  const [mainKeyword, setMainKeyword] =
+    useState("");
+  const [productType, setProductType] =
+    useState("");
+  const [brand, setBrand] =
+    useState("피싱템");
+  const [modelName, setModelName] =
+    useState("");
+  const [featuresText, setFeaturesText] =
+    useState("");
+  const [
+    requiredWordsText,
+    setRequiredWordsText,
+  ] = useState("");
+  const [
+    excludedWordsText,
+    setExcludedWordsText,
+  ] = useState("");
+  const [productUrl, setProductUrl] =
+    useState("");
+  const [currentTitle, setCurrentTitle] =
+    useState("");
+  const [resolvePending, setResolvePending] =
+    useState(false);
+  const [analysisPending, setAnalysisPending] =
+    useState(false);
+  const [message, setMessage] =
+    useState("");
+  const [error, setError] =
+    useState("");
+  const [copiedTitle, setCopiedTitle] =
+    useState("");
+  const [result, setResult] =
+    useState<ProductNameRecommendationResponse | null>(
+      null,
+    );
+
+  function splitWords(value: string) {
+    return value
+      .split(/[,/\n]+/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  function resetResult() {
+    setResult(null);
+    setError("");
+    setMessage("");
+    setCopiedTitle("");
+  }
+
+  function changeMode(nextMode: ProductNameMode) {
+    setMode(nextMode);
+    resetResult();
+
+    if (nextMode === "new") {
+      setProductUrl("");
+      setCurrentTitle("");
+    } else {
+      setProductType("");
+      setModelName("");
+      setFeaturesText("");
+      setRequiredWordsText("");
+      setExcludedWordsText("");
+      setMainKeyword("");
+    }
+  }
+
+  async function handleResolveLink() {
+    if (!productUrl.trim()) {
+      setError(
+        "네이버 상품 링크를 붙여넣어 주세요.",
+      );
+      return;
+    }
+
+    setResolvePending(true);
+    setError("");
+    setMessage("");
+    setResult(null);
+
+    try {
+      const resolved =
+        await resolveProductLink(
+          productUrl.trim(),
+        );
+
+      setCurrentTitle(
+        resolved.current_title,
+      );
+
+      if (
+        resolved.suggested_main_keyword
+        && !mainKeyword.trim()
+      ) {
+        setMainKeyword(
+          resolved.suggested_main_keyword,
+        );
+      }
+
+      setMessage(resolved.message);
+
+      if (!resolved.resolved) {
+        setError(
+          "자동 확인에 실패했습니다. 현재 상품명과 메인 키워드를 직접 입력해 주세요.",
+        );
+      }
+    } catch (requestError) {
+      setError(
+        requestError instanceof ApiError
+          ? requestError.message
+          : "상품 링크를 확인하지 못했습니다.",
+      );
+    } finally {
+      setResolvePending(false);
+    }
+  }
+
+  async function handleRecommend(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    let resolvedTitle =
+      currentTitle.trim();
+    let resolvedKeyword =
+      mainKeyword.trim();
+
+    setAnalysisPending(true);
+    setError("");
+    setMessage("");
+    setResult(null);
+    setCopiedTitle("");
+
+    try {
+      if (
+        mode === "existing"
+        && productUrl.trim()
+        && !resolvedTitle
+      ) {
+        const resolved =
+          await resolveProductLink(
+            productUrl.trim(),
+          );
+
+        resolvedTitle =
+          resolved.current_title;
+
+        if (!resolvedKeyword) {
+          resolvedKeyword =
+            resolved.suggested_main_keyword;
+        }
+
+        setCurrentTitle(resolvedTitle);
+
+        if (resolvedKeyword) {
+          setMainKeyword(resolvedKeyword);
+        }
+
+        if (!resolved.resolved) {
+          setMessage(resolved.message);
+        }
+      }
+
+      if (
+        mode === "existing"
+        && !resolvedTitle
+      ) {
+        throw new Error(
+          "현재 상품명을 자동으로 확인하지 못했습니다. 현재 상품명을 직접 입력해 주세요.",
+        );
+      }
+
+      if (!resolvedKeyword) {
+        throw new Error(
+          "메인 키워드를 입력해 주세요.",
+        );
+      }
+
+      const response =
+        await recommendProductNames({
+          mode,
+          main_keyword: resolvedKeyword,
+          product_type:
+            productType.trim(),
+          brand: brand.trim() || "피싱템",
+          model_name:
+            modelName.trim(),
+          features:
+            splitWords(featuresText),
+          required_words:
+            splitWords(requiredWordsText),
+          excluded_words:
+            splitWords(excludedWordsText),
+          current_title: resolvedTitle,
+          product_url:
+            productUrl.trim(),
+        });
+
+      setResult(response);
+      setMessage(
+        `${response.candidates.length}개의 상품명 추천을 완료했습니다.`,
+      );
+    } catch (requestError) {
+      setError(
+        requestError instanceof ApiError
+          ? requestError.message
+          : requestError instanceof Error
+            ? requestError.message
+            : "상품명을 분석하지 못했습니다.",
+      );
+    } finally {
+      setAnalysisPending(false);
+    }
+  }
+
+  async function copyTitle(title: string) {
+    try {
+      await navigator.clipboard.writeText(
+        title,
+      );
+      setCopiedTitle(title);
+      setMessage(
+        "추천 상품명을 클립보드에 복사했습니다.",
+      );
+    } catch {
+      setError(
+        "상품명을 복사하지 못했습니다.",
+      );
+    }
+  }
+
+  return (
+    <div className="product-name-seo">
+      <section className="product-name-mode-grid">
+        <button
+          type="button"
+          className={
+            mode === "new"
+              ? "product-name-mode-card active"
+              : "product-name-mode-card"
+          }
+          onClick={() => changeMode("new")}
+        >
+          <strong>🆕 신제품 상품명 만들기</strong>
+          <span>
+            메인 키워드와 실제 제품정보를 입력해
+            상품명을 추천받습니다.
+          </span>
+        </button>
+
+        <button
+          type="button"
+          className={
+            mode === "existing"
+              ? "product-name-mode-card active"
+              : "product-name-mode-card"
+          }
+          onClick={() =>
+            changeMode("existing")
+          }
+        >
+          <strong>🔄 기존 상품명 개선하기</strong>
+          <span>
+            네이버 상품 링크를 붙여넣어 현재
+            상품명을 진단합니다.
+          </span>
+        </button>
+      </section>
+
+      <form
+        className="product-name-form"
+        onSubmit={handleRecommend}
+      >
+        {mode === "existing" && (
+          <section className="product-name-link-box">
+            <div className="field-group">
+              <label htmlFor="seo-product-url">
+                네이버 상품 링크 *
+              </label>
+              <div className="product-name-link-row">
+                <input
+                  id="seo-product-url"
+                  type="url"
+                  value={productUrl}
+                  onChange={(event) => {
+                    setProductUrl(
+                      event.target.value,
+                    );
+                    setCurrentTitle("");
+                    setResult(null);
+                  }}
+                  placeholder="https://smartstore.naver.com/.../products/..."
+                  required
+                />
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={resolvePending}
+                  onClick={handleResolveLink}
+                >
+                  {resolvePending
+                    ? "상품 확인 중..."
+                    : "상품정보 불러오기"}
+                </button>
+              </div>
+            </div>
+
+            <div className="product-name-existing-grid">
+              <div className="field-group">
+                <label htmlFor="seo-current-title">
+                  현재 상품명
+                </label>
+                <input
+                  id="seo-current-title"
+                  value={currentTitle}
+                  onChange={(event) =>
+                    setCurrentTitle(
+                      event.target.value,
+                    )
+                  }
+                  placeholder="자동 확인 실패 시 현재 상품명을 입력하세요"
+                />
+              </div>
+
+              <div className="field-group">
+                <label htmlFor="seo-existing-keyword">
+                  메인 키워드
+                </label>
+                <input
+                  id="seo-existing-keyword"
+                  value={mainKeyword}
+                  onChange={(event) =>
+                    setMainKeyword(
+                      event.target.value,
+                    )
+                  }
+                  placeholder="예: 낚시의자"
+                />
+              </div>
+            </div>
+          </section>
+        )}
+
+        {mode === "new" && (
+          <>
+            <section className="product-name-basic-grid">
+              <div className="field-group">
+                <label htmlFor="seo-main-keyword">
+                  메인 키워드 *
+                </label>
+                <input
+                  id="seo-main-keyword"
+                  value={mainKeyword}
+                  onChange={(event) =>
+                    setMainKeyword(
+                      event.target.value,
+                    )
+                  }
+                  placeholder="예: 낚시의자"
+                  required
+                />
+              </div>
+
+              <div className="field-group">
+                <label htmlFor="seo-product-type">
+                  제품 종류 *
+                </label>
+                <input
+                  id="seo-product-type"
+                  value={productType}
+                  onChange={(event) =>
+                    setProductType(
+                      event.target.value,
+                    )
+                  }
+                  placeholder="예: 접이식 낚시의자"
+                  required
+                />
+              </div>
+
+              <div className="field-group">
+                <label htmlFor="seo-brand">
+                  브랜드
+                </label>
+                <input
+                  id="seo-brand"
+                  value={brand}
+                  onChange={(event) =>
+                    setBrand(
+                      event.target.value,
+                    )
+                  }
+                  placeholder="피싱템"
+                />
+              </div>
+            </section>
+
+            <div className="field-group">
+              <label htmlFor="seo-features">
+                제품 특징
+              </label>
+              <input
+                id="seo-features"
+                value={featuresText}
+                onChange={(event) =>
+                  setFeaturesText(
+                    event.target.value,
+                  )
+                }
+                placeholder="접이식, 경량, 등받이, 휴대용"
+              />
+              <small>
+                실제 제품에 해당하는 특징만 쉼표로
+                구분해 입력하세요.
+              </small>
+            </div>
+
+            <details className="product-name-advanced">
+              <summary>
+                상세 정보 더 입력하기
+              </summary>
+
+              <div className="product-name-basic-grid">
+                <div className="field-group">
+                  <label htmlFor="seo-model-name">
+                    모델명·품번
+                  </label>
+                  <input
+                    id="seo-model-name"
+                    value={modelName}
+                    onChange={(event) =>
+                      setModelName(
+                        event.target.value,
+                      )
+                    }
+                    placeholder="예: FT-CHAIR-01"
+                  />
+                </div>
+
+                <div className="field-group">
+                  <label htmlFor="seo-required">
+                    반드시 포함할 단어
+                  </label>
+                  <input
+                    id="seo-required"
+                    value={requiredWordsText}
+                    onChange={(event) =>
+                      setRequiredWordsText(
+                        event.target.value,
+                      )
+                    }
+                    placeholder="민물낚시, 바다낚시"
+                  />
+                </div>
+
+                <div className="field-group">
+                  <label htmlFor="seo-excluded">
+                    제외할 단어
+                  </label>
+                  <input
+                    id="seo-excluded"
+                    value={excludedWordsText}
+                    onChange={(event) =>
+                      setExcludedWordsText(
+                        event.target.value,
+                      )
+                    }
+                    placeholder="캠핑, 의자세트"
+                  />
+                </div>
+              </div>
+            </details>
+          </>
+        )}
+
+        <div className="product-name-submit-row">
+          <button
+            type="submit"
+            className="primary-button"
+            disabled={
+              analysisPending
+              || resolvePending
+            }
+          >
+            {analysisPending
+              ? "키워드·경쟁상품 분석 중..."
+              : mode === "new"
+                ? "🔍 상품명 분석 및 추천"
+                : "🔍 현재 상품명 진단"}
+          </button>
+
+          {result && (
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={resetResult}
+            >
+              결과 초기화
+            </button>
+          )}
+        </div>
+      </form>
+
+      {message && (
+        <div className="info-message">
+          {message}
+        </div>
+      )}
+
+      {error && (
+        <div className="error-message">
+          {error}
+        </div>
+      )}
+
+      {analysisPending && (
+        <div className="empty-state">
+          <div className="loading-spinner" />
+          <strong>
+            검색량과 경쟁상품을 분석하고 있습니다.
+          </strong>
+          <p>
+            네이버 API 응답에 따라 시간이 걸릴 수
+            있습니다.
+          </p>
+        </div>
+      )}
+
+      {result && !analysisPending && (
+        <div className="product-name-results">
+          <section className="product-name-summary">
+            <div>
+              <span>메인 키워드</span>
+              <strong>
+                {result.main_keyword}
+              </strong>
+            </div>
+            <div>
+              <span>대표 카테고리</span>
+              <strong>
+                {result.representative_category
+                  || "확인되지 않음"}
+              </strong>
+            </div>
+            <div>
+              <span>분석 경쟁상품</span>
+              <strong>
+                {result.competitor_titles.length}개
+              </strong>
+            </div>
+          </section>
+
+          {result.current_title && (
+            <section className="product-name-current">
+              <p className="eyebrow">
+                CURRENT PRODUCT NAME
+              </p>
+              <h3>현재 상품명</h3>
+              <p className="product-name-current-title">
+                {result.current_title}
+              </p>
+
+              {result.current_title_warnings.length > 0 && (
+                <ul className="product-name-warning-list">
+                  {result.current_title_warnings.map(
+                    (warning) => (
+                      <li key={warning}>
+                        {warning}
+                      </li>
+                    ),
+                  )}
+                </ul>
+              )}
+            </section>
+          )}
+
+          <section>
+            <div className="section-heading-row">
+              <div>
+                <p className="eyebrow">
+                  RECOMMENDED PRODUCT NAMES
+                </p>
+                <h3>추천 상품명</h3>
+              </div>
+              <span className="status-badge">
+                검토 후 스마트스토어에 적용
+              </span>
+            </div>
+
+            <div className="product-name-candidate-grid">
+              {result.candidates.map(
+                (candidate, index) => (
+                  <article
+                    key={candidate.title}
+                    className={
+                      index === 0
+                        ? "product-name-candidate recommended"
+                        : "product-name-candidate"
+                    }
+                  >
+                    <div className="product-name-candidate-head">
+                      <div>
+                        <span className="product-name-style">
+                          {candidate.style}
+                        </span>
+                        {index === 0 && (
+                          <span className="product-name-best">
+                            최종 권장
+                          </span>
+                        )}
+                      </div>
+                      <strong>
+                        SEO {candidate.score}점
+                      </strong>
+                    </div>
+
+                    <h4>{candidate.title}</h4>
+
+                    <div className="product-name-meta">
+                      <span>
+                        {candidate.length}자
+                      </span>
+                      <span>
+                        키워드{" "}
+                        {candidate.used_keywords.length}개
+                      </span>
+                    </div>
+
+                    <p>{candidate.reason}</p>
+
+                    <div className="product-name-keyword-chips">
+                      {candidate.used_keywords.map(
+                        (keyword) => (
+                          <span key={keyword}>
+                            #{keyword.replace(/\s+/g, "")}
+                          </span>
+                        ),
+                      )}
+                    </div>
+
+                    {result.mode === "existing" && (
+                      <div className="product-name-diff">
+                        {candidate.changes.kept.length > 0 && (
+                          <p>
+                            <strong>유지</strong>
+                            {candidate.changes.kept.join(
+                              ", ",
+                            )}
+                          </p>
+                        )}
+                        {candidate.changes.added.length > 0 && (
+                          <p>
+                            <strong className="added">
+                              추가
+                            </strong>
+                            {candidate.changes.added.join(
+                              ", ",
+                            )}
+                          </p>
+                        )}
+                        {candidate.changes.removed.length > 0 && (
+                          <p>
+                            <strong className="removed">
+                              삭제
+                            </strong>
+                            {candidate.changes.removed.join(
+                              ", ",
+                            )}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {candidate.warnings.length > 0 && (
+                      <ul className="product-name-warning-list">
+                        {candidate.warnings.map(
+                          (warning) => (
+                            <li key={warning}>
+                              {warning}
+                            </li>
+                          ),
+                        )}
+                      </ul>
+                    )}
+
+                    <button
+                      type="button"
+                      className="primary-button product-name-copy"
+                      onClick={() =>
+                        void copyTitle(
+                          candidate.title,
+                        )
+                      }
+                    >
+                      {copiedTitle === candidate.title
+                        ? "✓ 복사 완료"
+                        : "📋 상품명 복사"}
+                    </button>
+                  </article>
+                ),
+              )}
+            </div>
+          </section>
+
+          <section className="product-name-data-section">
+            <div>
+              <p className="eyebrow">
+                KEYWORD DATA
+              </p>
+              <h3>추천 키워드 검색량</h3>
+            </div>
+
+            <div className="table-scroll">
+              <table className="result-table">
+                <thead>
+                  <tr>
+                    <th>키워드</th>
+                    <th>총 검색량</th>
+                    <th>경쟁도</th>
+                    <th>대표 카테고리</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.keyword_suggestions.map(
+                    (item) => (
+                      <tr key={item.keyword}>
+                        <td>
+                          <strong>
+                            {item.keyword}
+                          </strong>
+                        </td>
+                        <td>
+                          {item.total_volume.toLocaleString()}
+                        </td>
+                        <td>
+                          {item.competition || "-"}
+                        </td>
+                        <td>
+                          {item.representative_category
+                            || "-"}
+                        </td>
+                      </tr>
+                    ),
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <details className="product-name-competitors">
+            <summary>
+              시장 경쟁상품 TOP 10 확인
+            </summary>
+
+            <div className="table-scroll">
+              <table className="result-table">
+                <thead>
+                  <tr>
+                    <th>순위</th>
+                    <th>상품명</th>
+                    <th>판매처</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.competitor_titles.map(
+                    (item) => (
+                      <tr
+                        key={`${item.rank}-${item.title}`}
+                      >
+                        <td>{item.rank}</td>
+                        <td>{item.title}</td>
+                        <td>{item.mall_name}</td>
+                      </tr>
+                    ),
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </details>
+
+          <div className="product-name-notice">
+            상품명 추천은 검색 적합성을 높이기 위한
+            참고 자료이며 상위 노출을 보장하지 않습니다.
+            실제 상품과 일치하는 정보만 사용하세요.
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
