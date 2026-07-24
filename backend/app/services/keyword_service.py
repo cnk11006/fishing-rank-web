@@ -6,12 +6,16 @@ import hmac
 import html
 import re
 import threading
+from io import BytesIO
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import requests
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 
 from app.config import get_settings
 
@@ -517,3 +521,183 @@ def analyze_keywords(
         ),
         "keywords": rows,
     }
+
+
+
+def safe_excel_text(value: Any) -> str:
+    text = str(value or "").strip()
+
+    if text.startswith(("=", "+", "-", "@")):
+        return "'" + text
+
+    return text
+
+
+def display_export_volume(
+    raw: Any,
+    value: Any,
+) -> int | str:
+    normalized = str(raw or "").replace(
+        " ",
+        "",
+    )
+
+    if normalized in {"<10", "10미만"}:
+        return "< 10"
+
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def create_keyword_analysis_workbook(
+    rows: list[dict[str, Any]],
+) -> bytes:
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "키워드 분석"
+
+    headers = [
+        "키워드",
+        "해시태그",
+        "PC 검색량",
+        "모바일 검색량",
+        "총 검색량",
+        "PC 평균 클릭",
+        "모바일 평균 클릭",
+        "쇼핑 상품 수",
+        "경쟁도",
+        "대표 카테고리",
+        "카테고리 표본 수",
+    ]
+
+    worksheet.append(headers)
+
+    header_fill = PatternFill(
+        fill_type="solid",
+        fgColor="0A84FF",
+    )
+    header_font = Font(
+        color="FFFFFF",
+        bold=True,
+    )
+
+    for cell in worksheet[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(
+            horizontal="center",
+            vertical="center",
+        )
+
+    for row in rows:
+        keyword = safe_excel_text(
+            row.get("keyword")
+        )
+        hashtag = (
+            "#"
+            + re.sub(
+                r"\s+",
+                "",
+                keyword.lstrip("'"),
+            )
+            if keyword
+            else ""
+        )
+
+        worksheet.append([
+            keyword,
+            safe_excel_text(hashtag),
+            display_export_volume(
+                row.get("pc_volume_raw"),
+                row.get("pc_volume"),
+            ),
+            display_export_volume(
+                row.get("mobile_volume_raw"),
+                row.get("mobile_volume"),
+            ),
+            int(row.get("total_volume") or 0),
+            float(
+                row.get("average_pc_clicks")
+                or 0
+            ),
+            float(
+                row.get(
+                    "average_mobile_clicks"
+                )
+                or 0
+            ),
+            int(row.get("product_count") or 0),
+            safe_excel_text(
+                row.get("competition")
+            ),
+            safe_excel_text(
+                row.get(
+                    "representative_category"
+                )
+            ),
+            int(
+                row.get(
+                    "category_sample_count"
+                )
+                or 0
+            ),
+        ])
+
+    worksheet.freeze_panes = "A2"
+    worksheet.auto_filter.ref = (
+        worksheet.dimensions
+    )
+    worksheet.row_dimensions[1].height = 24
+
+    widths = [
+        22,
+        22,
+        14,
+        16,
+        14,
+        15,
+        17,
+        16,
+        12,
+        38,
+        18,
+    ]
+
+    for index, width in enumerate(
+        widths,
+        start=1,
+    ):
+        worksheet.column_dimensions[
+            get_column_letter(index)
+        ].width = width
+
+    for row in worksheet.iter_rows(
+        min_row=2,
+    ):
+        for cell in row:
+            cell.alignment = Alignment(
+                vertical="top",
+                wrap_text=True,
+            )
+
+    for row_number in range(
+        2,
+        worksheet.max_row + 1,
+    ):
+        for column in ("E", "H", "K"):
+            worksheet[
+                f"{column}{row_number}"
+            ].number_format = "#,##0"
+
+        for column in ("F", "G"):
+            worksheet[
+                f"{column}{row_number}"
+            ].number_format = "#,##0.0"
+
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+
+    return output.getvalue()

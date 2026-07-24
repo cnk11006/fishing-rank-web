@@ -356,7 +356,7 @@ export type KeywordAnalysisResponse = {
 
 export function analyzeKeywords(
   keyword: string,
-  relatedLimit: 10 | 20 | 30,
+  relatedLimit: 10 | 20 | 30 | 50 | 100,
 ) {
   return apiRequest<KeywordAnalysisResponse>(
     "/api/keywords/analyze",
@@ -369,6 +369,43 @@ export function analyzeKeywords(
     },
   );
 }
+
+
+export async function exportKeywordAnalysisExcel(
+  keyword: string,
+  rows: KeywordAnalysisItem[],
+) {
+  const response = await fetch(
+    "/api/keywords/export",
+    {
+      method: "POST",
+      credentials: "include",
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        keyword,
+        rows,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    let data: ApiPayload = {};
+
+    try {
+      data = await response.json();
+    } catch {
+      data = {};
+    }
+
+    throw new ApiError(response.status, data);
+  }
+
+  return response.blob();
+}
+
 
 export type AdvertisingCampaign = {
   campaign_id: string;

@@ -22,6 +22,7 @@ import {
   collectSelectedMonitoringRanks,
   getMonitoringHistory,
   analyzeKeywords,
+  exportKeywordAnalysisExcel,
   getAdvertisingOverview,
   diagnoseAdvertising,
   analyzeSeason,
@@ -2368,14 +2369,13 @@ function MonitoringManager() {
 function KeywordAnalysis() {
   const [keyword, setKeyword] = useState("");
   const [relatedLimit, setRelatedLimit] =
-    useState<10 | 20 | 30>(20);
-  const [activeTab, setActiveTab] = useState<
-    "keywords" | "categories"
-  >("keywords");
+    useState<10 | 20 | 30 | 50 | 100>(20);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] =
     useState<KeywordAnalysisResponse | null>(null);
+  const [excelPending, setExcelPending] =
+    useState(false);
 
   async function handleAnalyze(
     event: FormEvent<HTMLFormElement>,
@@ -2407,6 +2407,51 @@ function KeywordAnalysis() {
       );
     } finally {
       setPending(false);
+    }
+  }
+
+  async function handleExcelDownload() {
+    if (!result || excelPending) {
+      return;
+    }
+
+    setExcelPending(true);
+    setError("");
+
+    try {
+      const blob =
+        await exportKeywordAnalysisExcel(
+          result.keyword,
+          result.keywords,
+        );
+
+      const url = URL.createObjectURL(blob);
+      const anchor =
+        document.createElement("a");
+      const safeKeyword = result.keyword
+        .replace(/[\\/:*?"<>|]/g, "_")
+        .slice(0, 50);
+      const timestamp = new Date()
+        .toISOString()
+        .replace(/[-:T]/g, "")
+        .slice(0, 14);
+
+      anchor.href = url;
+      anchor.download =
+        `키워드분석_${safeKeyword}_${timestamp}.xlsx`;
+
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (requestError) {
+      setError(
+        requestError instanceof ApiError
+          ? requestError.message
+          : "엑셀 파일을 만들지 못했습니다.",
+      );
+    } finally {
+      setExcelPending(false);
     }
   }
 
@@ -2466,7 +2511,9 @@ function KeywordAnalysis() {
                 Number(event.target.value) as
                   | 10
                   | 20
-                  | 30,
+                  | 30
+                  | 50
+                  | 100,
               )
             }
             disabled={pending}
@@ -2474,6 +2521,8 @@ function KeywordAnalysis() {
             <option value="10">10개</option>
             <option value="20">20개</option>
             <option value="30">30개</option>
+            <option value="50">50개</option>
+            <option value="100">100개</option>
           </select>
         </div>
 
@@ -2535,114 +2584,137 @@ function KeywordAnalysis() {
             </article>
           </div>
 
-          <div className="analysis-tabs">
-            <button
-              type="button"
-              className={
-                activeTab === "keywords"
-                  ? "analysis-tab active"
-                  : "analysis-tab"
-              }
-              onClick={() =>
-                setActiveTab("keywords")
-              }
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: "10px",
+              marginBottom: "10px",
+            }}
+          >
+            <div
+              className="result-summary"
+              style={{ marginBottom: 0 }}
             >
-              키워드 분석
-            </button>
+              연관 키워드{" "}
+              {result.count.toLocaleString()}개 ·
+              카테고리와 해시태그를 포함한 통합 결과
+            </div>
 
             <button
               type="button"
-              className={
-                activeTab === "categories"
-                  ? "analysis-tab active"
-                  : "analysis-tab"
-              }
+              className="secondary-button"
               onClick={() =>
-                setActiveTab("categories")
+                void handleExcelDownload()
               }
+              disabled={excelPending}
             >
-              Category Analysis
+              {excelPending
+                ? "엑셀 생성 중..."
+                : "📥 엑셀 다운로드"}
             </button>
           </div>
 
-          {activeTab === "keywords" ? (
-            <div className="table-scroll">
-              <table className="result-table">
-                <thead>
-                  <tr>
-                    <th>키워드</th>
-                    <th>PC 검색량</th>
-                    <th>모바일 검색량</th>
-                    <th>총 검색량</th>
-                    <th>쇼핑 상품 수</th>
-                    <th>경쟁도</th>
-                  </tr>
-                </thead>
+          <div className="table-scroll">
+            <table className="result-table keyword-unified-table">
+              <thead>
+                <tr>
+                  <th>키워드</th>
+                  <th>PC 검색량</th>
+                  <th>모바일 검색량</th>
+                  <th>총 검색량</th>
+                  <th>PC 평균 클릭</th>
+                  <th>모바일 평균 클릭</th>
+                  <th>쇼핑 상품 수</th>
+                  <th>경쟁도</th>
+                  <th>대표 카테고리·해시태그</th>
+                </tr>
+              </thead>
 
-                <tbody>
-                  {result.keywords.map((item) => (
-                    <tr key={item.keyword}>
-                      <td>
-                        <strong>
-                          {item.keyword}
-                        </strong>
-                      </td>
-                      <td>
-                        {displayVolume(
-                          item.pc_volume_raw,
-                          item.pc_volume,
-                        )}
-                      </td>
-                      <td>
-                        {displayVolume(
-                          item.mobile_volume_raw,
-                          item.mobile_volume,
-                        )}
-                      </td>
-                      <td>
-                        {item.total_volume
-                          .toLocaleString()}
-                      </td>
-                      <td>
-                        {item.product_count
-                          .toLocaleString()}
-                      </td>
-                      <td>
-                        {item.competition || "-"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="table-scroll">
-              <table className="result-table category-table">
-                <thead>
-                  <tr>
-                    <th>키워드</th>
-                    <th>대표 카테고리</th>
-                  </tr>
-                </thead>
+              <tbody>
+                {result.keywords.map((item) => (
+                  <tr key={item.keyword}>
+                    <td>
+                      <strong>{item.keyword}</strong>
+                    </td>
 
-                <tbody>
-                  {result.keywords.map((item) => (
-                    <tr key={item.keyword}>
-                      <td>
+                    <td>
+                      {displayVolume(
+                        item.pc_volume_raw,
+                        item.pc_volume,
+                      )}
+                    </td>
+
+                    <td>
+                      {displayVolume(
+                        item.mobile_volume_raw,
+                        item.mobile_volume,
+                      )}
+                    </td>
+
+                    <td>
+                      <strong>
+                        {item.total_volume.toLocaleString()}
+                      </strong>
+                    </td>
+
+                    <td>
+                      {item.average_pc_clicks.toLocaleString(
+                        undefined,
+                        {
+                          maximumFractionDigits: 1,
+                        },
+                      )}
+                    </td>
+
+                    <td>
+                      {item.average_mobile_clicks.toLocaleString(
+                        undefined,
+                        {
+                          maximumFractionDigits: 1,
+                        },
+                      )}
+                    </td>
+
+                    <td>
+                      {item.product_count.toLocaleString()}
+                    </td>
+
+                    <td>
+                      {item.competition || "-"}
+                    </td>
+
+                    <td>
+                      <div className="keyword-category-cell">
                         <strong>
-                          {item.keyword}
+                          {item.representative_category ||
+                            "카테고리 없음"}
                         </strong>
-                      </td>
-                      <td>
-                        {item.representative_category ||
-                          "-"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+
+                        <span className="keyword-hashtag">
+                          #
+                          {item.keyword.replace(
+                            /\s+/g,
+                            "",
+                          )}
+                        </span>
+
+                        {item.category_sample_count > 0 && (
+                          <small>
+                            카테고리 표본{" "}
+                            {item.category_sample_count.toLocaleString()}
+                            개
+                          </small>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
 

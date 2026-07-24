@@ -1822,3 +1822,48 @@ button:disabled {
     padding: 10px 11px;
   }
 }
+
+
+/* Unified keyword analysis table */
+.keyword-unified-table {
+  min-width: 1320px;
+}
+
+.keyword-unified-table th:nth-child(1) {
+  min-width: 150px;
+}
+
+.keyword-unified-table th:nth-child(9) {
+  min-width: 270px;
+}
+
+.keyword-category-cell {
+  display: grid;
+  justify-items: start;
+  gap: 7px;
+  min-width: 240px;
+  line-height: 1.45;
+}
+
+.keyword-category-cell > strong {
+  color: #334155;
+}
+
+.keyword-category-cell > small {
+  color: #98a2b3;
+  font-size: 0.74rem;
+}
+
+.keyword-hashtag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  border: 1px solid #cfe4ff;
+  border-radius: 999px;
+  background: #eef6ff;
+  padding: 3px 10px;
+  color: #075da8;
+  font-size: 0.8rem;
+  font-weight: 800;
+  word-break: break-all;
+}
