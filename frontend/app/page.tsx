@@ -794,6 +794,11 @@ function RankSearchPreview() {
                       (item) => (
                         <tr
                           key={`market-${itemKey(item)}`}
+                          className={
+                            item.is_ours
+                              ? "rank-market-own-row"
+                              : undefined
+                          }
                         >
                           <td>
                             <strong>{item.rank}위</strong>
@@ -809,7 +814,17 @@ function RankSearchPreview() {
                               "-"
                             )}
                           </td>
-                          <td>{item.title}</td>
+                          <td>
+                            <div className="rank-market-product">
+                              <span>{item.title}</span>
+
+                              {item.is_ours && (
+                                <span className="our-product-badge">
+                                  🎣 피싱템 상품
+                                </span>
+                              )}
+                            </div>
+                          </td>
                           <td>{item.mall_name}</td>
                           <td>
                             {item.price

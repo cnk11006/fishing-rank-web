@@ -190,6 +190,7 @@ def parse_item(
             ).strip()
             for number in range(1, 5)
         ],
+        "is_ours": is_our_shop_item(item),
         "is_catalog": (
             product_type in CATALOG_TYPES
         ),

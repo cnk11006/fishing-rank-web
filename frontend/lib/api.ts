@@ -117,6 +117,7 @@ export type RankSearchItem = {
   brand: string;
   maker: string;
   categories: string[];
+  is_ours: boolean;
   is_catalog: boolean;
   catalog_badge: string;
 };
