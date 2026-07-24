@@ -1867,3 +1867,121 @@ button:disabled {
   font-weight: 800;
   word-break: break-all;
 }
+
+
+/* Representative keyword hashtags */
+.keyword-hashtag-panel {
+  display: grid;
+  gap: 14px;
+  margin: 18px 0;
+  border: 1px solid #dbeafe;
+  border-radius: 16px;
+  background:
+    linear-gradient(
+      135deg,
+      #f8fbff 0%,
+      #eef6ff 100%
+    );
+  padding: 18px;
+}
+
+.keyword-hashtag-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.keyword-hashtag-heading > div {
+  display: grid;
+  gap: 5px;
+}
+
+.keyword-hashtag-heading span {
+  color: #667085;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.keyword-hashtag-heading strong {
+  color: #172033;
+  line-height: 1.5;
+}
+
+.keyword-hashtag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.keyword-representative-hashtag {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid #bfdcff;
+  border-radius: 999px;
+  background: #fff;
+  padding: 5px 12px;
+  color: #075da8;
+  font-size: 0.84rem;
+  font-weight: 800;
+  line-height: 1.3;
+  word-break: break-all;
+}
+
+.keyword-representative-hashtag small {
+  display: inline-grid;
+  width: 19px;
+  height: 19px;
+  place-items: center;
+  border-radius: 50%;
+  background: #0a84ff;
+  color: #fff;
+  font-size: 0.65rem;
+}
+
+@media (max-width: 650px) {
+  .keyword-hashtag-panel {
+    padding: 15px;
+  }
+
+  .keyword-hashtag-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .keyword-representative-hashtag {
+    width: 100%;
+  }
+}
+
+@media (max-width: 420px) {
+  .keyword-hashtag-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* Keyword hashtag visible volume */
+.keyword-hashtag-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.keyword-hashtag-copy strong {
+  overflow-wrap: anywhere;
+  color: #075da8;
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.keyword-hashtag-copy em {
+  color: #667085;
+  font-size: 0.7rem;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1.3;
+}

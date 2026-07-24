@@ -696,6 +696,98 @@ def create_keyword_analysis_workbook(
                 f"{column}{row_number}"
             ].number_format = "#,##0.0"
 
+    hashtag_sheet = workbook.create_sheet(
+        title="대표 해시태그"
+    )
+    hashtag_headers = [
+        "순위",
+        "대표 해시태그",
+        "키워드",
+        "총 검색량",
+        "대표 카테고리",
+    ]
+    hashtag_sheet.append(hashtag_headers)
+
+    for cell in hashtag_sheet[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(
+            horizontal="center",
+            vertical="center",
+        )
+
+    for index, row in enumerate(
+        rows[:10],
+        start=1,
+    ):
+        keyword = safe_excel_text(
+            row.get("keyword")
+        )
+        hashtag = (
+            "#"
+            + re.sub(
+                r"\\s+",
+                "",
+                keyword.lstrip("'"),
+            )
+            if keyword
+            else ""
+        )
+
+        hashtag_sheet.append([
+            index,
+            safe_excel_text(hashtag),
+            keyword,
+            int(
+                row.get("total_volume")
+                or 0
+            ),
+            safe_excel_text(
+                row.get(
+                    "representative_category"
+                )
+            ),
+        ])
+
+    hashtag_sheet.freeze_panes = "A2"
+    hashtag_sheet.auto_filter.ref = (
+        hashtag_sheet.dimensions
+    )
+    hashtag_sheet.row_dimensions[1].height = 24
+
+    hashtag_widths = [
+        10,
+        28,
+        25,
+        16,
+        42,
+    ]
+
+    for index, width in enumerate(
+        hashtag_widths,
+        start=1,
+    ):
+        hashtag_sheet.column_dimensions[
+            get_column_letter(index)
+        ].width = width
+
+    for row in hashtag_sheet.iter_rows(
+        min_row=2,
+    ):
+        for cell in row:
+            cell.alignment = Alignment(
+                vertical="top",
+                wrap_text=True,
+            )
+
+    for row_number in range(
+        2,
+        hashtag_sheet.max_row + 1,
+    ):
+        hashtag_sheet[
+            f"D{row_number}"
+        ].number_format = "#,##0"
+
     output = BytesIO()
     workbook.save(output)
     output.seek(0)

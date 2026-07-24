@@ -2584,6 +2584,59 @@ function KeywordAnalysis() {
             </article>
           </div>
 
+          <section className="keyword-hashtag-panel">
+            <div className="keyword-hashtag-heading">
+              <div>
+                <span>대표 카테고리</span>
+                <strong>
+                  {result.summary
+                    .representative_category ||
+                    "카테고리 없음"}
+                </strong>
+              </div>
+
+              <div>
+                <span>대표 해시태그</span>
+                <strong>
+                  상위{" "}
+                  {Math.min(
+                    10,
+                    result.keywords.length,
+                  )}
+                  개
+                </strong>
+              </div>
+            </div>
+
+            <div className="keyword-hashtag-list">
+              {result.keywords
+                .slice(0, 10)
+                .map((item, index) => (
+                  <span
+                    key={`representative-hashtag-${item.keyword}`}
+                    className="keyword-representative-hashtag"
+                  >
+                    <small>{index + 1}</small>
+
+                    <span className="keyword-hashtag-copy">
+                      <strong>
+                        #
+                        {item.keyword.replace(
+                          /\s+/g,
+                          "",
+                        )}
+                      </strong>
+
+                      <em>
+                        총 검색량{" "}
+                        {item.total_volume.toLocaleString()}
+                      </em>
+                    </span>
+                  </span>
+                ))}
+            </div>
+          </section>
+
           <div
             style={{
               display: "flex",
