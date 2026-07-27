@@ -10,6 +10,10 @@ from urllib.parse import urljoin, urlparse
 
 import requests
 
+from app.services.commerce_service import (
+    CommerceApiError,
+    fetch_channel_product,
+)
 from app.services.keyword_service import (
     KeywordAnalysisError,
     analyze_keywords,
@@ -368,27 +372,84 @@ def resolve_existing_product(
             "네이버 상품 링크를 입력해 주세요."
         )
 
-    title, message = fetch_public_product_title(
+    if not is_allowed_naver_url(product_url):
+        raise ProductNameRecommendationError(
+            "네이버 상품 링크만 입력할 수 있습니다."
+        )
+
+    product_id = extract_product_id(product_url)
+    commerce_error = ""
+
+    if product_id:
+        try:
+            commerce_product = fetch_channel_product(
+                product_id
+            )
+            title = clean_product_title(
+                commerce_product["current_title"]
+            )
+
+            if title:
+                return {
+                    "resolved": True,
+                    "product_url": product_url,
+                    "product_id": product_id,
+                    "origin_product_no": (
+                        commerce_product[
+                            "origin_product_no"
+                        ]
+                    ),
+                    "current_title": title,
+                    "suggested_main_keyword": (
+                        suggest_main_keyword(title)
+                    ),
+                    "source": "commerce_api",
+                    "message": (
+                        "네이버 커머스 API에서 "
+                        "상품정보를 불러왔습니다."
+                    ),
+                }
+        except CommerceApiError as error:
+            commerce_error = str(error)
+
+    title, public_message = fetch_public_product_title(
         product_url
     )
 
+    if title:
+        return {
+            "resolved": True,
+            "product_url": product_url,
+            "product_id": product_id,
+            "origin_product_no": "",
+            "current_title": title,
+            "suggested_main_keyword": (
+                suggest_main_keyword(title)
+            ),
+            "source": "public_page",
+            "message": (
+                "네이버 상품 페이지에서 "
+                "상품정보를 불러왔습니다."
+            ),
+        }
+
+    message = public_message
+
+    if commerce_error:
+        message = (
+            f"{commerce_error} "
+            "현재 상품명을 직접 입력해 주세요."
+        )
+
     return {
-        "resolved": bool(title),
+        "resolved": False,
         "product_url": product_url,
-        "product_id": extract_product_id(
-            product_url
-        ),
-        "current_title": title,
-        "suggested_main_keyword": (
-            suggest_main_keyword(title)
-            if title
-            else ""
-        ),
-        "message": (
-            "상품정보를 불러왔습니다."
-            if title
-            else message
-        ),
+        "product_id": product_id,
+        "origin_product_no": "",
+        "current_title": "",
+        "suggested_main_keyword": "",
+        "source": "manual",
+        "message": message,
     }
 
 

@@ -858,8 +858,10 @@ export type ProductLinkResolveResponse = {
   resolved: boolean;
   product_url: string;
   product_id: string;
+  origin_product_no: string;
   current_title: string;
   suggested_main_keyword: string;
+  source: "commerce_api" | "public_page" | "manual";
   message: string;
 };
 

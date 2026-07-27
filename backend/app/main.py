@@ -82,6 +82,9 @@ def health_check() -> dict[str, Any]:
         "keyword_api_settings_ready": (
             settings.keyword_api_settings_ready
         ),
+        "commerce_api_settings_ready": (
+            settings.commerce_api_settings_ready
+        ),
         "checked_at": datetime.now(
             timezone.utc
         ).isoformat(),
