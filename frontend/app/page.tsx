@@ -3699,6 +3699,21 @@ function CandidateAnalysis() {
                 {result.elapsed_seconds}초 ·{" "}
                 {result.summary.error_count}건
               </strong>
+              <div className="candidate-subtext">
+                보유상품 제외{" "}
+                {result.summary.excluded_owned_count
+                  .toLocaleString()}건
+              </div>
+              <div className="candidate-subtext">
+                유사상품 제외{" "}
+                {result.summary.excluded_similar_count
+                  .toLocaleString()}건
+              </div>
+              <div className="candidate-subtext">
+                보유 검토{" "}
+                {result.summary.ownership_review_count
+                  .toLocaleString()}건
+              </div>
             </article>
           </div>
 
@@ -3772,6 +3787,19 @@ function CandidateAnalysis() {
                             item.maker ||
                             "브랜드 정보 없음"}
                         </div>
+
+                        {item.ownership_review && (
+                          <div className="candidate-subtext">
+                            ⚠️ 보유 가능성{" "}
+                            {item.ownership_confidence}%
+                            {item.matched_owned_product && (
+                              <>
+                                {" · "}비교:{" "}
+                                {item.matched_owned_product}
+                              </>
+                            )}
+                          </div>
+                        )}
 
                         {item.recommendation_reasons.map(
                           (reason) => (

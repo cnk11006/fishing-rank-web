@@ -200,6 +200,7 @@ def read_product_master(
     product_ids: set[str] = set()
     normalized_names: set[str] = set()
     brands: set[str] = set()
+    products: list[dict[str, str]] = []
 
     for record in frame.to_dict(orient="records"):
         product_name = clean_cell(
@@ -239,11 +240,22 @@ def read_product_master(
         if normalized_product_brand:
             brands.add(normalized_product_brand)
 
+        if normalized_product_name:
+            products.append({
+                "product_id": product_id,
+                "product_name": product_name,
+                "normalized_name": (
+                    normalized_product_name
+                ),
+                "brand": normalized_product_brand,
+            })
+
     return {
         "product_count": len(frame),
         "product_ids": product_ids,
         "normalized_names": normalized_names,
         "brands": brands,
+        "products": products,
         "product_id_column_found": bool(
             product_id_column
         ),
@@ -251,6 +263,274 @@ def read_product_master(
             brand_column
         ),
     }
+
+
+
+GENERIC_PRODUCT_WORDS = {
+    "정품",
+    "공식",
+    "공식몰",
+    "무료배송",
+    "당일배송",
+    "국내배송",
+    "신상품",
+    "추천",
+    "특가",
+    "낚시",
+    "낚시용",
+    "세트",
+    "용품",
+}
+
+
+def ownership_tokens(value: Any) -> set[str]:
+    return {
+        token
+        for token in re.findall(
+            r"[0-9a-z가-힣]+",
+            clean_cell(value).casefold(),
+        )
+        if (
+            len(token) >= 2
+            and token not in GENERIC_PRODUCT_WORDS
+        )
+    }
+
+
+def extract_spec_tokens(value: Any) -> set[str]:
+    text = clean_cell(value).casefold()
+
+    # 30호, 30-450, 450cm처럼 단위와 구분자가
+    # 달라도 숫자 규격을 동일하게 비교합니다.
+    numeric_tokens = set(
+        re.findall(r"\d+(?:\.\d+)?", text)
+    )
+
+    # lt3000, bg4500 같은 영문·숫자 모델코드도
+    # 별도로 보존합니다.
+    model_tokens = {
+        token
+        for token in re.findall(
+            r"[a-z]+[0-9]+[a-z0-9]*",
+            text,
+        )
+        if token
+    }
+
+    return numeric_tokens | model_tokens
+
+
+def calculate_ownership_similarity(
+    candidate_name: str,
+    candidate_brand: str,
+    owned_name: str,
+    owned_brand: str,
+) -> int:
+    candidate_normalized = normalize_name(
+        candidate_name
+    )
+    owned_normalized = normalize_name(
+        owned_name
+    )
+
+    if (
+        candidate_normalized
+        and candidate_normalized == owned_normalized
+    ):
+        return 100
+
+    if (
+        min(
+            len(candidate_normalized),
+            len(owned_normalized),
+        ) >= 8
+        and (
+            candidate_normalized in owned_normalized
+            or owned_normalized in candidate_normalized
+        )
+    ):
+        return 96
+
+    candidate_tokens = ownership_tokens(
+        candidate_name
+    )
+    owned_tokens = ownership_tokens(
+        owned_name
+    )
+
+    if not candidate_tokens or not owned_tokens:
+        return 0
+
+    intersection = (
+        candidate_tokens & owned_tokens
+    )
+    union = candidate_tokens | owned_tokens
+
+    overlap = (
+        len(intersection)
+        / min(
+            len(candidate_tokens),
+            len(owned_tokens),
+        )
+    )
+    jaccard = (
+        len(intersection) / len(union)
+        if union
+        else 0
+    )
+
+    normalized_candidate_brand = normalize_brand(
+        candidate_brand
+    )
+    normalized_owned_brand = normalize_brand(
+        owned_brand
+    )
+    brand_match = bool(
+        normalized_candidate_brand
+        and normalized_owned_brand
+        and (
+            normalized_candidate_brand
+            == normalized_owned_brand
+        )
+    )
+
+    candidate_specs = extract_spec_tokens(
+        candidate_name
+    )
+    owned_specs = extract_spec_tokens(
+        owned_name
+    )
+    common_specs = (
+        candidate_specs & owned_specs
+    )
+
+    spec_overlap = (
+        len(common_specs)
+        / min(
+            len(candidate_specs),
+            len(owned_specs),
+        )
+        if candidate_specs and owned_specs
+        else 0
+    )
+
+    score = round(
+        overlap * 70
+        + jaccard * 15
+        + (10 if brand_match else 0)
+        + (5 if common_specs else 0)
+    )
+
+    # 같은 브랜드이고 모델·규격 대부분이 일치하면
+    # SEO 문구 배열이 달라도 동일 상품으로 판단합니다.
+    if (
+        brand_match
+        and spec_overlap >= 0.67
+        and overlap >= 0.50
+    ):
+        score = max(score, 95)
+
+    # 양쪽에 규격이 있지만 하나도 일치하지 않으면
+    # 다른 모델일 가능성이 높으므로 자동 제외하지 않습니다.
+    if (
+        candidate_specs
+        and owned_specs
+        and not common_specs
+    ):
+        score = min(score, 74)
+
+    return max(0, min(100, score))
+
+
+def find_owned_product_match(
+    product_id: str,
+    title: str,
+    brand: str,
+    maker: str,
+    coverage: dict[str, Any],
+) -> dict[str, Any]:
+    normalized_title = normalize_name(title)
+    normalized_item_brand = normalize_brand(
+        brand or maker
+    )
+
+    if (
+        product_id
+        and product_id in coverage["product_ids"]
+    ):
+        return {
+            "owned": True,
+            "confidence": 100,
+            "matched_product_name": "",
+            "reason": "상품번호 일치",
+        }
+
+    if (
+        normalized_title
+        and normalized_title
+        in coverage["normalized_names"]
+    ):
+        matched = next(
+            (
+                product
+                for product in coverage.get(
+                    "products",
+                    [],
+                )
+                if product["normalized_name"]
+                == normalized_title
+            ),
+            None,
+        )
+
+        return {
+            "owned": True,
+            "confidence": 100,
+            "matched_product_name": (
+                matched["product_name"]
+                if matched
+                else ""
+            ),
+            "reason": "상품명 일치",
+        }
+
+    best_score = 0
+    best_product_name = ""
+
+    for owned_product in coverage.get(
+        "products",
+        [],
+    ):
+        score = calculate_ownership_similarity(
+            candidate_name=title,
+            candidate_brand=(
+                normalized_item_brand
+            ),
+            owned_name=owned_product[
+                "product_name"
+            ],
+            owned_brand=owned_product["brand"],
+        )
+
+        if score > best_score:
+            best_score = score
+            best_product_name = owned_product[
+                "product_name"
+            ]
+
+    return {
+        "owned": best_score >= 90,
+        "confidence": best_score,
+        "matched_product_name": best_product_name,
+        "reason": (
+            "모델·상품명 유사"
+            if best_score >= 90
+            else "보유 가능성 검토"
+            if best_score >= 75
+            else ""
+        ),
+    }
+
 
 
 def get_exact_volume(keyword: str) -> int:
@@ -595,6 +875,12 @@ def analyze_candidates(
         dict[str, Any],
     ] = {}
     errors: list[dict[str, str]] = []
+    excluded_our_store_count = 0
+    excluded_owned_count = 0
+    excluded_product_id_count = 0
+    excluded_exact_name_count = 0
+    excluded_similar_count = 0
+    ownership_review_count = 0
 
     for keyword in normalized_keywords:
         try:
@@ -688,6 +974,7 @@ def analyze_candidates(
                     )
 
                     if is_our_store(mall_name):
+                        excluded_our_store_count += 1
                         continue
 
                     if category1 in EXCLUDED_CATEGORIES:
@@ -711,16 +998,24 @@ def analyze_candidates(
                         )
                     )
 
-                    same_product = (
-                        bool(product_id)
-                        and product_id
-                        in coverage["product_ids"]
-                    ) or (
-                        bool(normalized_title)
-                        and normalized_title
-                        in coverage[
-                            "normalized_names"
-                        ]
+                    ownership_match = (
+                        find_owned_product_match(
+                            product_id=product_id,
+                            title=title,
+                            brand=brand,
+                            maker=maker,
+                            coverage=coverage,
+                        )
+                    )
+                    same_product = bool(
+                        ownership_match["owned"]
+                    )
+                    ownership_confidence = int(
+                        ownership_match["confidence"]
+                    )
+                    ownership_review = (
+                        not same_product
+                        and ownership_confidence >= 75
                     )
 
                     group_owned = (
@@ -730,7 +1025,25 @@ def analyze_candidates(
                     )
 
                     if exclude_owned and same_product:
+                        excluded_owned_count += 1
+
+                        if (
+                            ownership_match["reason"]
+                            == "상품번호 일치"
+                        ):
+                            excluded_product_id_count += 1
+                        elif (
+                            ownership_match["reason"]
+                            == "상품명 일치"
+                        ):
+                            excluded_exact_name_count += 1
+                        else:
+                            excluded_similar_count += 1
+
                         continue
+
+                    if ownership_review:
+                        ownership_review_count += 1
 
                     if exclude_group and group_owned:
                         continue
@@ -796,6 +1109,20 @@ def analyze_candidates(
                             "product_group_owned": (
                                 group_owned
                             ),
+                            "ownership_confidence": (
+                                ownership_confidence
+                            ),
+                            "ownership_review": (
+                                ownership_review
+                            ),
+                            "matched_owned_product": (
+                                ownership_match[
+                                    "matched_product_name"
+                                ]
+                            ),
+                            "ownership_match_reason": (
+                                ownership_match["reason"]
+                            ),
                             "keywords": {keyword},
                             "sellers": (
                                 {mall_name}
@@ -815,6 +1142,29 @@ def analyze_candidates(
                         candidate["keywords"].add(
                             keyword
                         )
+
+                        if (
+                            ownership_confidence
+                            > candidate[
+                                "ownership_confidence"
+                            ]
+                        ):
+                            candidate[
+                                "ownership_confidence"
+                            ] = ownership_confidence
+                            candidate[
+                                "ownership_review"
+                            ] = ownership_review
+                            candidate[
+                                "matched_owned_product"
+                            ] = ownership_match[
+                                "matched_product_name"
+                            ]
+                            candidate[
+                                "ownership_match_reason"
+                            ] = ownership_match[
+                                "reason"
+                            ]
 
                         if mall_name:
                             candidate["sellers"].add(
@@ -931,6 +1281,14 @@ def analyze_candidates(
             )
         )
 
+        if candidate["ownership_review"]:
+            warnings.insert(
+                0,
+                "보유 가능성 높음 "
+                f"({candidate['ownership_confidence']}%): "
+                f"{candidate['matched_owned_product']}",
+            )
+
         candidate["potential_score"] = (
             potential_score
         )
@@ -971,6 +1329,24 @@ def analyze_candidates(
             ],
             "candidate_count": len(results),
             "error_count": len(errors),
+            "excluded_our_store_count": (
+                excluded_our_store_count
+            ),
+            "excluded_owned_count": (
+                excluded_owned_count
+            ),
+            "excluded_product_id_count": (
+                excluded_product_id_count
+            ),
+            "excluded_exact_name_count": (
+                excluded_exact_name_count
+            ),
+            "excluded_similar_count": (
+                excluded_similar_count
+            ),
+            "ownership_review_count": (
+                ownership_review_count
+            ),
             "max_results": max_results,
             "result_limit": result_limit,
             "min_volume": min_volume,

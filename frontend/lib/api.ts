@@ -692,6 +692,10 @@ export type CandidateResultItem = {
   volume_keyword: string;
   same_product_owned: boolean;
   product_group_owned: boolean;
+  ownership_confidence: number;
+  ownership_review: boolean;
+  matched_owned_product: string;
+  ownership_match_reason: string;
   keywords: string[];
   observed_seller_count: number;
   lowest_price: number;
@@ -721,6 +725,12 @@ export type CandidateAnalysisResponse = {
     master_product_count: number;
     candidate_count: number;
     error_count: number;
+    excluded_our_store_count: number;
+    excluded_owned_count: number;
+    excluded_product_id_count: number;
+    excluded_exact_name_count: number;
+    excluded_similar_count: number;
+    ownership_review_count: number;
     max_results: number;
     result_limit: number;
     min_volume: number;
