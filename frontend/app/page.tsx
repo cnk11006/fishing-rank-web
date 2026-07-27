@@ -3726,8 +3726,8 @@ function CandidateAnalysis() {
               <table className="result-table candidate-table">
                 <thead>
                   <tr>
-                    <th>점수</th>
-                    <th>상품명</th>
+                    <th>점수·등급</th>
+                    <th>상품명·추천 근거</th>
                     <th>최고순위</th>
                     <th>월간 검색량</th>
                     <th>대표가격</th>
@@ -3751,6 +3751,17 @@ function CandidateAnalysis() {
                           {item.potential_score
                             .toLocaleString()}
                         </strong>
+                        <div className="candidate-subtext">
+                          {item.recommendation_grade}
+                        </div>
+                        <div className="candidate-subtext">
+                          수요 {item.score_detail.demand}
+                          {" · "}노출 {item.score_detail.exposure}
+                        </div>
+                        <div className="candidate-subtext">
+                          관련성 {item.score_detail.relevance}
+                          {" · "}카테고리 {item.score_detail.category}
+                        </div>
                       </td>
                       <td>
                         <strong>
@@ -3761,6 +3772,26 @@ function CandidateAnalysis() {
                             item.maker ||
                             "브랜드 정보 없음"}
                         </div>
+
+                        {item.recommendation_reasons.map(
+                          (reason) => (
+                            <div
+                              className="candidate-subtext"
+                              key={reason}
+                            >
+                              ✅ {reason}
+                            </div>
+                          ),
+                        )}
+
+                        {item.warnings.map((warning) => (
+                          <div
+                            className="candidate-subtext"
+                            key={warning}
+                          >
+                            ⚠️ {warning}
+                          </div>
+                        ))}
                       </td>
                       <td>{item.best_rank}위</td>
                       <td>
@@ -3777,6 +3808,15 @@ function CandidateAnalysis() {
                       <td>
                         {item.representative_seller ||
                           "-"}
+                        <div className="candidate-subtext">
+                          관측 판매처{" "}
+                          {item.observed_seller_count
+                            .toLocaleString()}곳
+                        </div>
+                        <div className="candidate-subtext">
+                          가격 안정성{" "}
+                          {item.score_detail.price_stability}점
+                        </div>
                       </td>
                       <td>
                         <div className="candidate-badges">
@@ -4086,10 +4126,13 @@ function CrossPurchaseAnalysis() {
                 <thead>
                   <tr>
                     <th>순번</th>
+                    <th>추천</th>
                     <th>상품번호</th>
                     <th>함께 산 상품</th>
-                    <th>함께 구매 주문수</th>
-                    <th>동시구매율</th>
+                    <th>함께 구매</th>
+                    <th>Confidence</th>
+                    <th>Support</th>
+                    <th>Lift</th>
                     <th>우리 제품</th>
                   </tr>
                 </thead>
@@ -4103,19 +4146,54 @@ function CrossPurchaseAnalysis() {
                       }
                     >
                       <td>{index + 1}</td>
+                      <td>
+                        <strong className="candidate-score">
+                          {item.recommendation_score}
+                        </strong>
+                        <div className="candidate-subtext">
+                          {item.recommendation_grade}
+                        </div>
+                      </td>
                       <td>{item.product_id || "-"}</td>
                       <td>
                         <strong>
                           {item.product_name}
                         </strong>
+
+                        {item.warnings.map((warning) => (
+                          <div
+                            className="candidate-subtext"
+                            key={warning}
+                          >
+                            ⚠️ {warning}
+                          </div>
+                        ))}
                       </td>
                       <td>
                         {item.together_order_count
                           .toLocaleString()}건
+                        <div className="candidate-subtext">
+                          수량{" "}
+                          {item.together_quantity
+                            .toLocaleString()}개
+                        </div>
+                        {item.together_revenue > 0 && (
+                          <div className="candidate-subtext">
+                            매출{" "}
+                            {item.together_revenue
+                              .toLocaleString()}원
+                          </div>
+                        )}
                       </td>
                       <td>
                         <strong className="cross-rate">
-                          {item.cross_purchase_rate}%
+                          {item.confidence}%
+                        </strong>
+                      </td>
+                      <td>{item.support}%</td>
+                      <td>
+                        <strong>
+                          {item.lift.toFixed(2)}
                         </strong>
                       </td>
                       <td>

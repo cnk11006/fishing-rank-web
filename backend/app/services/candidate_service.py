@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import math
 import re
 import time
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -19,6 +19,7 @@ from app.services.keyword_service import (
 from app.services.rank_service import (
     NaverShoppingError,
     clean_title,
+    create_http_session,
     fetch_page,
     is_our_store,
     safe_integer,
@@ -285,24 +286,217 @@ def get_exact_volume(keyword: str) -> int:
     return pc_volume + mobile_volume
 
 
+def tokenize_product(value: Any) -> set[str]:
+    return {
+        token
+        for token in re.findall(
+            r"[0-9a-z가-힣]+",
+            clean_cell(value).casefold(),
+        )
+        if len(token) >= 2
+    }
+
+
+def calculate_relevance_score(
+    keyword: str,
+    title: str,
+    brand: str,
+    maker: str,
+) -> int:
+    normalized_keyword = normalize_name(keyword)
+    normalized_title = normalize_name(title)
+    normalized_brand = normalize_name(brand)
+    normalized_maker = normalize_name(maker)
+
+    if not normalized_keyword:
+        return 0
+
+    if normalized_keyword in normalized_title:
+        return 100
+
+    if normalized_keyword in {
+        normalized_brand,
+        normalized_maker,
+    }:
+        return 95
+
+    keyword_tokens = tokenize_product(keyword)
+    searchable_tokens = tokenize_product(
+        " ".join([
+            title,
+            brand,
+            maker,
+        ])
+    )
+
+    if not keyword_tokens:
+        return 0
+
+    matched = len(
+        keyword_tokens & searchable_tokens
+    )
+
+    return round(
+        matched / len(keyword_tokens) * 90
+    )
+
+
+def calculate_category_score(
+    category: str,
+) -> int:
+    normalized = normalize_name(category)
+
+    if "낚시" in normalized:
+        return 100
+
+    if (
+        "스포츠레저" in normalized
+        or "캠핑" in normalized
+    ):
+        return 65
+
+    if normalized:
+        return 25
+
+    return 10
+
+
+def calculate_price_stability(
+    prices: list[int],
+) -> int:
+    valid_prices = [
+        price
+        for price in prices
+        if price > 0
+    ]
+
+    if len(valid_prices) < 2:
+        return 50
+
+    average = sum(valid_prices) / len(valid_prices)
+
+    if average <= 0:
+        return 0
+
+    variance = sum(
+        (price - average) ** 2
+        for price in valid_prices
+    ) / len(valid_prices)
+    coefficient = math.sqrt(variance) / average
+
+    return max(
+        0,
+        min(
+            100,
+            round(100 - coefficient * 100),
+        ),
+    )
+
+
 def calculate_candidate_score(
     search_volume: int,
     best_rank: int,
     observed_seller_count: int,
-) -> int:
-    if best_rank <= 0:
-        return 0
-
-    rank_score = search_volume / best_rank
-    seller_bonus = min(
-        max(observed_seller_count - 1, 0)
-        * 0.03,
-        0.20,
+    relevance_score: int,
+    category_score: int,
+    price_stability_score: int,
+) -> tuple[int, dict[str, int]]:
+    demand_score = min(
+        100,
+        round(
+            math.log10(
+                max(search_volume, 0) + 1
+            )
+            / 5
+            * 100
+        ),
+    )
+    exposure_score = max(
+        0,
+        min(
+            100,
+            round((401 - best_rank) / 4),
+        ),
+    )
+    seller_score = min(
+        100,
+        max(observed_seller_count, 1) * 20,
     )
 
-    return int(
-        rank_score * (1 + seller_bonus)
+    total = round(
+        demand_score * 0.24
+        + exposure_score * 0.21
+        + relevance_score * 0.24
+        + category_score * 0.13
+        + seller_score * 0.10
+        + price_stability_score * 0.08
     )
+
+    return total, {
+        "demand": demand_score,
+        "exposure": exposure_score,
+        "relevance": relevance_score,
+        "category": category_score,
+        "seller_diversity": seller_score,
+        "price_stability": price_stability_score,
+    }
+
+
+def build_candidate_reasons(
+    score_detail: dict[str, int],
+    best_rank: int,
+    seller_count: int,
+) -> tuple[list[str], list[str]]:
+    reasons: list[str] = []
+    warnings: list[str] = []
+
+    if score_detail["demand"] >= 60:
+        reasons.append(
+            "검색 수요가 충분한 키워드입니다."
+        )
+
+    if best_rank <= 20:
+        reasons.append(
+            "네이버 쇼핑 상위 20위 안에 노출됩니다."
+        )
+    elif best_rank <= 100:
+        reasons.append(
+            "네이버 쇼핑 상위 100위 안에 노출됩니다."
+        )
+
+    if score_detail["relevance"] >= 90:
+        reasons.append(
+            "검색어와 상품의 관련성이 높습니다."
+        )
+
+    if score_detail["category"] >= 100:
+        reasons.append(
+            "낚시 관련 카테고리와 일치합니다."
+        )
+
+    if seller_count >= 3:
+        reasons.append(
+            "여러 판매처에서 유통되는 상품입니다."
+        )
+    else:
+        warnings.append(
+            "관측된 판매처가 적어 공급 가능성을 "
+            "별도로 확인해야 합니다."
+        )
+
+    if score_detail["price_stability"] < 50:
+        warnings.append(
+            "판매 가격 편차가 커서 원가와 마진을 "
+            "확인해야 합니다."
+        )
+
+    if score_detail["relevance"] < 60:
+        warnings.append(
+            "검색어와의 관련성이 낮을 수 있습니다."
+        )
+
+    return reasons, warnings
+
 
 
 def should_exclude_item(
@@ -415,18 +609,57 @@ def analyze_candidates(
                 range(1, max_results + 1, 100)
             )
 
-            with ThreadPoolExecutor(
-                max_workers=min(3, len(starts))
-            ) as executor:
-                pages = list(executor.map(
-                    lambda start: fetch_page(
-                        keyword,
+            exclude_options: list[str] = []
+
+            if exclude_used:
+                exclude_options.append("used")
+
+            if exclude_rental:
+                exclude_options.append("rental")
+
+            if exclude_overseas:
+                exclude_options.append("cbshop")
+
+            exclude = ":".join(exclude_options)
+            pages: list[
+                tuple[int, list[dict[str, Any]], int]
+            ] = []
+            session = create_http_session()
+
+            try:
+                for start in starts:
+                    items, page_total, page_error = (
+                        fetch_page(
+                            session=session,
+                            keyword=keyword,
+                            start=start,
+                            client_id=(
+                                settings.naver_client_id
+                            ),
+                            client_secret=(
+                                settings.naver_client_secret
+                            ),
+                            exclude=exclude,
+                        )
+                    )
+
+                    if page_error:
+                        raise NaverShoppingError(
+                            f"{start}위 구간: {page_error}"
+                        )
+
+                    pages.append((
                         start,
-                        settings.naver_client_id,
-                        settings.naver_client_secret,
-                    ),
-                    starts,
-                ))
+                        items,
+                        page_total,
+                    ))
+
+                    if not items:
+                        break
+
+                    time.sleep(0.08)
+            finally:
+                session.close()
 
             pages.sort(key=lambda page: page[0])
 
@@ -503,12 +736,11 @@ def analyze_candidates(
                         continue
 
                     candidate_key = (
-                        product_id
-                        or (
-                            normalized_title
-                            + ":"
-                            + normalized_item_brand
-                        )
+                        normalized_title
+                        + ":"
+                        + normalized_item_brand
+                        if normalized_title
+                        else product_id
                     )
 
                     if not candidate_key:
@@ -657,12 +889,64 @@ def analyze_candidates(
             if prices
             else 0
         )
-        candidate["potential_score"] = (
+        relevance_score = (
+            calculate_relevance_score(
+                candidate["volume_keyword"],
+                candidate["product_name"],
+                candidate["brand"],
+                candidate["maker"],
+            )
+        )
+        category_score = (
+            calculate_category_score(
+                candidate["category"]
+            )
+        )
+        price_stability_score = (
+            calculate_price_stability(
+                prices
+            )
+        )
+
+        # 네이버 검색 결과에 포함됐더라도 검색어와 상품이
+        # 거의 관련 없으면 사입 후보에서 제외합니다.
+        if relevance_score < 25:
+            continue
+
+        potential_score, score_detail = (
             calculate_candidate_score(
                 candidate["search_volume"],
                 candidate["best_rank"],
                 seller_count,
+                relevance_score,
+                category_score,
+                price_stability_score,
             )
+        )
+        reasons, warnings = (
+            build_candidate_reasons(
+                score_detail,
+                candidate["best_rank"],
+                seller_count,
+            )
+        )
+
+        candidate["potential_score"] = (
+            potential_score
+        )
+        candidate["score_detail"] = score_detail
+        candidate["recommendation_reasons"] = (
+            reasons
+        )
+        candidate["warnings"] = warnings
+        candidate["recommendation_grade"] = (
+            "매우 높음"
+            if potential_score >= 80
+            else "높음"
+            if potential_score >= 65
+            else "보통"
+            if potential_score >= 50
+            else "검토 필요"
         )
         results.append(candidate)
 

@@ -592,6 +592,19 @@ export type CrossPurchaseResultItem = {
   together_order_count: number;
   cross_purchase_rate: number;
   is_ours: boolean;
+  support: number;
+  confidence: number;
+  lift: number;
+  overall_order_count: number;
+  together_quantity: number;
+  together_revenue: number;
+  recommendation_score: number;
+  recommendation_grade:
+    | "매우 높음"
+    | "높음"
+    | "보통"
+    | "낮음";
+  warnings: string[];
 };
 
 export type CrossPurchaseResponse = {
@@ -601,8 +614,11 @@ export type CrossPurchaseResponse = {
     successful_file_count: number;
     file_error_count: number;
     order_row_count: number;
+    total_order_count: number;
     target_order_count: number;
     result_count: number;
+    duplicate_row_count: number;
+    excluded_status_count: number;
     top_n: number;
     min_orders: number;
   };
@@ -611,6 +627,11 @@ export type CrossPurchaseResponse = {
     file_name: string;
     message: string;
   }[];
+  analysis_guide: {
+    support: string;
+    confidence: string;
+    lift: string;
+  };
   elapsed_seconds: number;
 };
 
@@ -677,6 +698,21 @@ export type CandidateResultItem = {
   highest_price: number;
   average_price: number;
   potential_score: number;
+  recommendation_grade:
+    | "매우 높음"
+    | "높음"
+    | "보통"
+    | "검토 필요";
+  score_detail: {
+    demand: number;
+    exposure: number;
+    relevance: number;
+    category: number;
+    seller_diversity: number;
+    price_stability: number;
+  };
+  recommendation_reasons: string[];
+  warnings: string[];
 };
 
 export type CandidateAnalysisResponse = {
