@@ -22,7 +22,6 @@ import {
   getMonitoringHistory,
   analyzeKeywords,
   exportKeywordAnalysisExcel,
-  resolveProductLink,
   recommendProductNames,
   getAdvertisingOverview,
   diagnoseAdvertising,
@@ -41,7 +40,6 @@ import type {
   MonitoringCollectResponse,
   MonitoringHistoryItem,
   KeywordAnalysisResponse,
-  ProductNameMode,
   ProductNameRecommendationResponse,
   AdvertisingOverviewResponse,
   AdvertisingDiagnosisResponse,
@@ -2286,8 +2284,6 @@ function MonitoringManager() {
 }
 
 function ProductNameSeo() {
-  const [mode, setMode] =
-    useState<ProductNameMode>("new");
   const [mainKeyword, setMainKeyword] =
     useState("");
   const [productType, setProductType] =
@@ -2306,12 +2302,8 @@ function ProductNameSeo() {
     excludedWordsText,
     setExcludedWordsText,
   ] = useState("");
-  const [productUrl, setProductUrl] =
-    useState("");
   const [currentTitle, setCurrentTitle] =
     useState("");
-  const [resolvePending, setResolvePending] =
-    useState(false);
   const [analysisPending, setAnalysisPending] =
     useState(false);
   const [message, setMessage] =
@@ -2339,157 +2331,53 @@ function ProductNameSeo() {
     setCopiedTitle("");
   }
 
-  function changeMode(nextMode: ProductNameMode) {
-    setMode(nextMode);
-    resetResult();
-
-    if (nextMode === "new") {
-      setProductUrl("");
-      setCurrentTitle("");
-    } else {
-      setProductType("");
-      setModelName("");
-      setFeaturesText("");
-      setRequiredWordsText("");
-      setExcludedWordsText("");
-      setMainKeyword("");
-    }
-  }
-
-  async function handleResolveLink() {
-    if (!productUrl.trim()) {
-      setError(
-        "네이버 상품 링크를 붙여넣어 주세요.",
-      );
-      return;
-    }
-
-    setResolvePending(true);
-    setError("");
-    setMessage("");
-    setResult(null);
-
-    try {
-      const resolved =
-        await resolveProductLink(
-          productUrl.trim(),
-        );
-
-      setCurrentTitle(
-        resolved.current_title,
-      );
-
-      if (
-        resolved.suggested_main_keyword
-        && !mainKeyword.trim()
-      ) {
-        setMainKeyword(
-          resolved.suggested_main_keyword,
-        );
-      }
-
-      setMessage(resolved.message);
-
-      if (!resolved.resolved) {
-        setError(
-          "자동 확인에 실패했습니다. 현재 상품명과 메인 키워드를 직접 입력해 주세요.",
-        );
-      }
-    } catch (requestError) {
-      setError(
-        requestError instanceof ApiError
-          ? requestError.message
-          : "상품 링크를 확인하지 못했습니다.",
-      );
-    } finally {
-      setResolvePending(false);
-    }
-  }
-
   async function handleRecommend(
     event: FormEvent<HTMLFormElement>,
   ) {
     event.preventDefault();
 
-    let resolvedTitle =
-      currentTitle.trim();
-    let resolvedKeyword =
-      mainKeyword.trim();
+    const resolvedKeyword = mainKeyword.trim();
+    const resolvedTitle = currentTitle.trim();
+    const requestMode =
+      resolvedTitle ? "existing" : "new";
+
+    if (!resolvedKeyword) {
+      setError("메인 키워드를 입력해 주세요.");
+      return;
+    }
+
+    if (!productType.trim()) {
+      setError("제품 종류를 입력해 주세요.");
+      return;
+    }
 
     setAnalysisPending(true);
     setError("");
     setMessage("");
     setResult(null);
-    setCopiedTitle("");
 
     try {
-      if (
-        mode === "existing"
-        && productUrl.trim()
-        && !resolvedTitle
-      ) {
-        const resolved =
-          await resolveProductLink(
-            productUrl.trim(),
-          );
-
-        resolvedTitle =
-          resolved.current_title;
-
-        if (!resolvedKeyword) {
-          resolvedKeyword =
-            resolved.suggested_main_keyword;
-        }
-
-        setCurrentTitle(resolvedTitle);
-
-        if (resolvedKeyword) {
-          setMainKeyword(resolvedKeyword);
-        }
-
-        if (!resolved.resolved) {
-          setMessage(resolved.message);
-        }
-      }
-
-      if (
-        mode === "existing"
-        && !resolvedTitle
-      ) {
-        throw new Error(
-          "현재 상품명을 자동으로 확인하지 못했습니다. 현재 상품명을 직접 입력해 주세요.",
-        );
-      }
-
-      if (!resolvedKeyword) {
-        throw new Error(
-          "메인 키워드를 입력해 주세요.",
-        );
-      }
-
       const response =
         await recommendProductNames({
-          mode,
+          mode: requestMode,
           main_keyword: resolvedKeyword,
-          product_type:
-            productType.trim(),
+          product_type: productType.trim(),
           brand: brand.trim() || "피싱템",
-          model_name:
-            modelName.trim(),
-          features:
-            splitWords(featuresText),
+          model_name: modelName.trim(),
+          features: splitWords(featuresText),
           required_words:
             splitWords(requiredWordsText),
           excluded_words:
             splitWords(excludedWordsText),
           current_title: resolvedTitle,
-          product_url:
-            productUrl.trim(),
+          product_url: "",
         });
 
       setResult(response);
       setMessage(
-        `${response.candidates.length}개의 상품명 추천을 완료했습니다.`,
+        resolvedTitle
+          ? "현재 상품명 진단과 SEO 추천을 완료했습니다."
+          : "SEO 상품명 추천을 완료했습니다.",
       );
     } catch (requestError) {
       setError(
@@ -2497,7 +2385,7 @@ function ProductNameSeo() {
           ? requestError.message
           : requestError instanceof Error
             ? requestError.message
-            : "상품명을 분석하지 못했습니다.",
+            : "상품명 추천을 완료하지 못했습니다.",
       );
     } finally {
       setAnalysisPending(false);
@@ -2522,118 +2410,33 @@ function ProductNameSeo() {
 
   return (
     <div className="product-name-seo">
-      <section className="product-name-mode-grid">
-        <button
-          type="button"
-          className={
-            mode === "new"
-              ? "product-name-mode-card active"
-              : "product-name-mode-card"
-          }
-          onClick={() => changeMode("new")}
-        >
-          <strong>🆕 신제품 상품명 만들기</strong>
-          <span>
-            메인 키워드와 실제 제품정보를 입력해
-            상품명을 추천받습니다.
-          </span>
-        </button>
-
-        <button
-          type="button"
-          className={
-            mode === "existing"
-              ? "product-name-mode-card active"
-              : "product-name-mode-card"
-          }
-          onClick={() =>
-            changeMode("existing")
-          }
-        >
-          <strong>🔄 기존 상품명 개선하기</strong>
-          <span>
-            네이버 상품 링크를 붙여넣어 현재
-            상품명을 진단합니다.
-          </span>
-        </button>
-      </section>
-
       <form
         className="product-name-form"
         onSubmit={handleRecommend}
       >
-        {mode === "existing" && (
-          <section className="product-name-link-box">
-            <div className="field-group">
-              <label htmlFor="seo-product-url">
-                네이버 상품 링크 *
-              </label>
-              <div className="product-name-link-row">
-                <input
-                  id="seo-product-url"
-                  type="url"
-                  value={productUrl}
-                  onChange={(event) => {
-                    setProductUrl(
-                      event.target.value,
-                    );
-                    setCurrentTitle("");
-                    setResult(null);
-                  }}
-                  placeholder="https://smartstore.naver.com/.../products/..."
-                  required
-                />
-                <button
-                  type="button"
-                  className="secondary-button"
-                  disabled={resolvePending}
-                  onClick={handleResolveLink}
-                >
-                  {resolvePending
-                    ? "상품 확인 중..."
-                    : "상품정보 불러오기"}
-                </button>
-              </div>
-            </div>
+        <section className="product-name-link-box">
+          <div className="field-group">
+            <label htmlFor="seo-current-title">
+              현재 상품명 (선택)
+            </label>
+            <input
+              id="seo-current-title"
+              type="text"
+              value={currentTitle}
+              onChange={(event) => {
+                setCurrentTitle(event.target.value);
+                resetResult();
+              }}
+              placeholder="기존 상품을 개선할 때만 현재 상품명을 붙여 넣으세요"
+            />
+            <small>
+              비워두면 신규 상품명 추천으로 작동합니다.
+              현재 상품명을 입력하면 유지·삭제·추가 단어와
+              변경 전후를 함께 진단합니다.
+            </small>
+          </div>
+        </section>
 
-            <div className="product-name-existing-grid">
-              <div className="field-group">
-                <label htmlFor="seo-current-title">
-                  현재 상품명
-                </label>
-                <input
-                  id="seo-current-title"
-                  value={currentTitle}
-                  onChange={(event) =>
-                    setCurrentTitle(
-                      event.target.value,
-                    )
-                  }
-                  placeholder="자동 확인 실패 시 현재 상품명을 입력하세요"
-                />
-              </div>
-
-              <div className="field-group">
-                <label htmlFor="seo-existing-keyword">
-                  메인 키워드
-                </label>
-                <input
-                  id="seo-existing-keyword"
-                  value={mainKeyword}
-                  onChange={(event) =>
-                    setMainKeyword(
-                      event.target.value,
-                    )
-                  }
-                  placeholder="예: 낚시의자"
-                />
-              </div>
-            </div>
-          </section>
-        )}
-
-        {mode === "new" && (
-          <>
             <section className="product-name-basic-grid">
               <div className="field-group">
                 <label htmlFor="seo-main-keyword">
@@ -2761,23 +2564,15 @@ function ProductNameSeo() {
                 </div>
               </div>
             </details>
-          </>
-        )}
-
         <div className="product-name-submit-row">
           <button
             type="submit"
             className="primary-button"
-            disabled={
-              analysisPending
-              || resolvePending
-            }
-          >
-            {analysisPending
-              ? "키워드·경쟁상품 분석 중..."
-              : mode === "new"
-                ? "🔍 상품명 분석 및 추천"
-                : "🔍 현재 상품명 진단"}
+              disabled={analysisPending}
+            >
+              {analysisPending
+                ? "키워드·경쟁상품 분석 중..."
+                : "🔍 상품명 분석 및 추천"}
           </button>
 
           {result && (

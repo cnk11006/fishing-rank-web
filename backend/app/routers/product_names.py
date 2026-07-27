@@ -5,7 +5,7 @@ from fastapi import (
     Depends,
     HTTPException,
 )
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 from app.dependencies import (
     require_authenticated_session,
@@ -13,7 +13,6 @@ from app.dependencies import (
 from app.services.product_name_service import (
     ProductNameRecommendationError,
     recommend_product_names,
-    resolve_existing_product,
 )
 
 
@@ -24,18 +23,6 @@ router = APIRouter(
         Depends(require_authenticated_session)
     ],
 )
-
-
-class ProductLinkRequest(BaseModel):
-    product_url: str = Field(
-        min_length=1,
-        max_length=1000,
-    )
-
-    @field_validator("product_url")
-    @classmethod
-    def clean_url(cls, value: str) -> str:
-        return value.strip()
 
 
 class ProductNameRequest(BaseModel):
@@ -76,21 +63,6 @@ class ProductNameRequest(BaseModel):
         default="",
         max_length=1000,
     )
-
-
-@router.post("/resolve")
-def resolve_product_link(
-    request: ProductLinkRequest,
-):
-    try:
-        return resolve_existing_product(
-            request.product_url
-        )
-    except ProductNameRecommendationError as error:
-        raise HTTPException(
-            status_code=400,
-            detail=str(error),
-        ) from error
 
 
 @router.post("/recommend")

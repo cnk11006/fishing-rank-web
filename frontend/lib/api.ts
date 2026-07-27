@@ -854,17 +854,6 @@ export function clearApplicationCaches() {
 
 export type ProductNameMode = "new" | "existing";
 
-export type ProductLinkResolveResponse = {
-  resolved: boolean;
-  product_url: string;
-  product_id: string;
-  origin_product_no: string;
-  current_title: string;
-  suggested_main_keyword: string;
-  source: "commerce_api" | "public_page" | "manual";
-  message: string;
-};
-
 export type ProductNameKeywordSuggestion = {
   keyword: string;
   total_volume: number;
@@ -927,20 +916,6 @@ export type ProductNameRecommendationResponse = {
   candidates: ProductNameCandidate[];
   warnings: string[];
 };
-
-export function resolveProductLink(
-  productUrl: string,
-) {
-  return apiRequest<ProductLinkResolveResponse>(
-    "/api/product-names/resolve",
-    {
-      method: "POST",
-      body: JSON.stringify({
-        product_url: productUrl,
-      }),
-    },
-  );
-}
 
 export function recommendProductNames(input: {
   mode: ProductNameMode;

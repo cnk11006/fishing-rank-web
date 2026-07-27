@@ -23,8 +23,6 @@ class Settings:
     session_secret: str
     naver_client_id: str
     naver_client_secret: str
-    naver_commerce_client_id: str
-    naver_commerce_client_secret: str
     google_sheet_id: str
     gcp_service_account_json: str
     naver_ad_customer_id: str
@@ -49,15 +47,6 @@ class Settings:
                 self.naver_client_secret,
                 self.google_sheet_id,
                 self.gcp_service_account_json,
-            )
-        )
-
-    @property
-    def commerce_api_settings_ready(self) -> bool:
-        return all(
-            (
-                self.naver_commerce_client_id,
-                self.naver_commerce_client_secret,
             )
         )
 
@@ -99,12 +88,6 @@ def get_settings() -> Settings:
         naver_client_id=read_environment("NAVER_CLIENT_ID"),
         naver_client_secret=read_environment(
             "NAVER_CLIENT_SECRET"
-        ),
-        naver_commerce_client_id=read_environment(
-            "NAVER_COMMERCE_CLIENT_ID"
-        ),
-        naver_commerce_client_secret=read_environment(
-            "NAVER_COMMERCE_CLIENT_SECRET"
         ),
         google_sheet_id=read_environment("GOOGLE_SHEET_ID"),
         gcp_service_account_json=read_environment(
