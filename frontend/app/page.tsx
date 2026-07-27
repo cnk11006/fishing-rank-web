@@ -28,6 +28,8 @@ import {
   analyzeSeason,
   analyzeCrossPurchase,
   analyzeCandidates,
+  exportCrossPurchaseAnalysisExcel,
+  exportCandidateAnalysisExcel,
   getDataManagementOverview,
   migrateLegacyRankSheets,
   clearApplicationCaches,
@@ -50,6 +52,47 @@ import type {
   RankMigrationResponse,
   CacheClearResponse,
 } from "@/lib/api";
+
+
+function downloadExcelBlob(
+  blob: Blob,
+  baseName: string,
+) {
+  const now = new Date();
+  const dateText = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+  ].join("");
+
+  const safeBaseName =
+    baseName
+      .replace(/[\\/:*?"<>|]/g, "-")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 100) || "분석결과";
+
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+
+  anchor.href = url;
+  anchor.download = `${safeBaseName}_${dateText}.xlsx`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+
+  window.setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 1000);
+}
+
+function getDownloadErrorMessage(
+  error: unknown,
+) {
+  return error instanceof ApiError
+    ? error.message
+    : "엑셀 파일을 생성하지 못했습니다.";
+}
 
 const navigationItems = [
   {
@@ -3667,6 +3710,47 @@ function CandidateAnalysis() {
         </div>
       )}
 
+
+      {/* candidate-analysis-excel-export */}
+      {result && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            marginBottom: "16px",
+          }}
+        >
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={async () => {
+              try {
+                const blob =
+                  await exportCandidateAnalysisExcel(
+                    result,
+                  );
+
+                const keywordText =
+                  result.keywords
+                    .slice(0, 5)
+                    .join("-") || "분석결과";
+
+                downloadExcelBlob(
+                  blob,
+                  `사입후보_${keywordText}`,
+                );
+              } catch (error) {
+                window.alert(
+                  getDownloadErrorMessage(error),
+                );
+              }
+            }}
+          >
+            📥 사입후보 엑셀 다운로드
+          </button>
+        </div>
+      )}
+
       {result && (
         <>
           <div className="metric-grid candidate-metrics">
@@ -4078,6 +4162,45 @@ function CrossPurchaseAnalysis() {
             주문번호·상품명이 포함된 엑셀 파일을
             선택해 주세요.
           </p>
+        </div>
+      )}
+
+
+      {/* cross-purchase-excel-export */}
+      {result && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            marginBottom: "16px",
+          }}
+        >
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={async () => {
+              try {
+                const blob =
+                  await exportCrossPurchaseAnalysisExcel(
+                    result,
+                  );
+
+                downloadExcelBlob(
+                  blob,
+                  `교차구매_${
+                    result.target_query ||
+                    "분석결과"
+                  }`,
+                );
+              } catch (error) {
+                window.alert(
+                  getDownloadErrorMessage(error),
+                );
+              }
+            }}
+          >
+            📥 교차구매 결과 엑셀 다운로드
+          </button>
         </div>
       )}
 

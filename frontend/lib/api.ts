@@ -983,3 +983,50 @@ export function recommendProductNames(input: {
     },
   );
 }
+
+async function exportAnalysisExcel(
+  path: string,
+  payload: unknown,
+): Promise<Blob> {
+  const response = await fetch(path, {
+    method: "POST",
+    credentials: "include",
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    let data: ApiPayload = {};
+
+    try {
+      data = await response.json();
+    } catch {
+      data = {};
+    }
+
+    throw new ApiError(response.status, data);
+  }
+
+  return response.blob();
+}
+
+export function exportCrossPurchaseAnalysisExcel(
+  result: CrossPurchaseResponse,
+) {
+  return exportAnalysisExcel(
+    "/api/cross-purchase/export",
+    result,
+  );
+}
+
+export function exportCandidateAnalysisExcel(
+  result: CandidateAnalysisResponse,
+) {
+  return exportAnalysisExcel(
+    "/api/candidates/export",
+    result,
+  );
+}

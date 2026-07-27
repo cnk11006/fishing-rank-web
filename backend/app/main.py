@@ -16,6 +16,7 @@ from app.routers.cross_purchase import router as cross_purchase_router
 from app.routers.candidates import router as candidates_router
 from app.routers.data_management import router as data_management_router
 from app.routers.product_names import router as product_names_router
+from app.routers.analysis_exports import router as analysis_exports_router
 
 
 settings = get_settings()
@@ -55,6 +56,7 @@ app.include_router(cross_purchase_router)
 app.include_router(candidates_router)
 app.include_router(data_management_router)
 app.include_router(product_names_router)
+app.include_router(analysis_exports_router)
 
 
 @app.get("/")
