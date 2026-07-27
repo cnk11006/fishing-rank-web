@@ -499,38 +499,408 @@ def build_title(
     return " ".join(result)
 
 
-def candidate_score(
+def contains_excluded(
+    value: str,
+    excluded_keys: set[str],
+) -> bool:
+    value_key = normalize_key(value)
+
+    return any(
+        excluded_key
+        and (
+            excluded_key in value_key
+            or value_key in excluded_key
+        )
+        for excluded_key in excluded_keys
+    )
+
+
+def extract_competitor_terms(
+    market_top10: list[dict[str, Any]],
+    known_terms: list[str],
+    brand: str,
+) -> list[dict[str, Any]]:
+    counts: Counter[str] = Counter()
+    display_names: dict[str, str] = {}
+
+    blocked_keys = {
+        normalize_key(word)
+        for word in (
+            PROMOTION_WORDS
+            | CLAIM_WORDS
+            | {
+                "네이버",
+                "스마트스토어",
+                "공식",
+                "정품",
+                "국내",
+                "상품",
+                "제품",
+            }
+        )
+    }
+
+    entity_keys = {
+        normalize_key(value)
+        for item in market_top10
+        for value in (
+            item.get("mall_name", ""),
+            item.get("brand", ""),
+            item.get("maker", ""),
+        )
+        if normalize_key(value)
+    }
+    entity_keys.add(normalize_key(brand))
+
+    cleaned_known_terms = [
+        normalize_text(term)
+        for term in known_terms
+        if 2 <= len(normalize_key(term)) <= 20
+    ]
+
+    for item in market_top10:
+        title = clean_product_title(
+            item.get("title", "")
+        )
+        title_key = normalize_key(title)
+        found: dict[str, str] = {}
+
+        for term in cleaned_known_terms:
+            key = normalize_key(term)
+
+            if key and key in title_key:
+                found[key] = term
+
+        for token in re.findall(
+            r"[0-9A-Za-z가-힣]+",
+            title,
+        ):
+            token = normalize_text(token)
+            key = normalize_key(token)
+
+            if (
+                len(key) < 2
+                or len(key) > 20
+                or key.isdigit()
+                or key in blocked_keys
+            ):
+                continue
+
+            if any(
+                key == entity_key
+                or key in entity_key
+                for entity_key in entity_keys
+            ):
+                continue
+
+            found.setdefault(key, token)
+
+        for key, term in found.items():
+            counts[key] += 1
+            display_names.setdefault(key, term)
+
+    terms: list[dict[str, Any]] = []
+
+    for key, product_count in counts.items():
+        if product_count < 2:
+            continue
+
+        if product_count >= 6:
+            recommendation = "적극 추천"
+        elif product_count >= 4:
+            recommendation = "추천"
+        else:
+            recommendation = "참고"
+
+        terms.append({
+            "term": display_names[key],
+            "product_count": product_count,
+            "frequency": round(
+                product_count
+                / max(len(market_top10), 1)
+                * 100,
+                1,
+            ),
+            "recommendation": recommendation,
+        })
+
+    terms.sort(
+        key=lambda item: (
+            -item["product_count"],
+            len(item["term"]),
+            item["term"],
+        )
+    )
+    return terms[:15]
+
+
+def score_candidate(
+    *,
     title: str,
     main_keyword: str,
+    product_type: str,
     brand: str,
     features: list[str],
-) -> int:
+    required_words: list[str],
+    keyword_rows: list[dict[str, Any]],
+    competitor_terms: list[dict[str, Any]],
+    representative_category: str,
+) -> tuple[int, dict[str, int]]:
     title_key = normalize_key(title)
-    score = 45
+    main_key = normalize_key(main_keyword)
+    product_key = normalize_key(product_type)
+    brand_key = normalize_key(brand)
 
-    if normalize_key(main_keyword) in title_key:
-        score += 25
+    main_position = title_key.find(main_key)
 
-    if brand and normalize_key(brand) in title_key:
-        score += 5
+    if main_position < 0:
+        main_score = 0
+    elif main_position <= len(brand_key) + 4:
+        main_score = 25
+    else:
+        main_score = 21
+
+    relevance_score = 0
+
+    if product_key and product_key in title_key:
+        relevance_score += 8
+    elif main_key in title_key:
+        relevance_score += 5
 
     matched_features = sum(
         1
         for feature in features
         if normalize_key(feature) in title_key
     )
-    score += min(matched_features * 4, 12)
-
-    if 15 <= len(title) <= 50:
-        score += 8
-
-    score += max(
-        0,
-        5 - len(policy_warnings(title)) * 3,
+    relevance_score += min(
+        matched_features * 2,
+        8,
     )
 
-    return min(max(score, 0), 100)
+    matched_required = sum(
+        1
+        for word in required_words
+        if normalize_key(word) in title_key
+    )
 
+    if required_words:
+        relevance_score += round(
+            4
+            * matched_required
+            / len(required_words)
+        )
+    else:
+        relevance_score += 4
+
+    relevance_score = min(relevance_score, 20)
+
+    volume_map = {
+        normalize_key(row.get("keyword", "")): int(
+            row.get("total_volume") or 0
+        )
+        for row in keyword_rows
+    }
+    max_volume = max(
+        volume_map.values(),
+        default=0,
+    )
+
+    demand_score = (
+        8 if main_key in title_key else 0
+    )
+    used_related_volume = max(
+        (
+            volume
+            for key, volume in volume_map.items()
+            if (
+                key
+                and key != main_key
+                and key in title_key
+            )
+        ),
+        default=0,
+    )
+
+    if max_volume > 0:
+        demand_score += round(
+            7
+            * used_related_volume
+            / max_volume
+        )
+
+    demand_score = min(demand_score, 15)
+
+    matched_market_counts = [
+        int(item["product_count"])
+        for item in competitor_terms
+        if normalize_key(item["term"]) in title_key
+    ]
+    market_denominator = sum(
+        int(item["product_count"])
+        for item in competitor_terms[:3]
+    )
+
+    if matched_market_counts and market_denominator:
+        competitor_score = min(
+            15,
+            round(
+                15
+                * sum(matched_market_counts)
+                / market_denominator
+            ),
+        )
+    else:
+        competitor_score = 0
+
+    category_score = 0
+
+    if representative_category:
+        category_score += 8
+
+    if product_key and (
+        product_key in title_key
+        or main_key in title_key
+    ):
+        category_score += 2
+
+    tokens = [
+        normalize_key(token)
+        for token in title.split()
+        if normalize_key(token)
+    ]
+    duplicate_count = sum(
+        count - 1
+        for count in Counter(tokens).values()
+        if count > 1
+    )
+
+    if 15 <= len(title) <= 50:
+        readability_score = 10
+    elif 10 <= len(title) <= 60:
+        readability_score = 7
+    elif len(title) <= 100:
+        readability_score = 4
+    else:
+        readability_score = 0
+
+    readability_score = max(
+        0,
+        readability_score - duplicate_count * 2,
+    )
+
+    policy_issue_count = sum(
+        1
+        for word in PROMOTION_WORDS | CLAIM_WORDS
+        if word in title
+    )
+
+    if re.search(r"[!★☆♥♡]{2,}", title):
+        policy_issue_count += 1
+
+    policy_score = max(
+        0,
+        5 - policy_issue_count * 2,
+    )
+
+    breakdown = {
+        "main_keyword": main_score,
+        "product_relevance": relevance_score,
+        "search_demand": demand_score,
+        "competitor_usage": competitor_score,
+        "category_fit": min(category_score, 10),
+        "readability": readability_score,
+        "policy_compliance": policy_score,
+    }
+
+    return sum(breakdown.values()), breakdown
+
+
+def diagnose_current_title(
+    *,
+    current_title: str,
+    main_keyword: str,
+    brand: str,
+    features: list[str],
+    excluded_keys: set[str],
+    competitor_terms: list[dict[str, Any]],
+) -> dict[str, list[str]]:
+    if not current_title:
+        return {
+            "keep": [],
+            "remove": [],
+            "consider": [],
+        }
+
+    tokens = [
+        token
+        for token in current_title.split()
+        if normalize_key(token)
+    ]
+    token_counts = Counter(
+        normalize_key(token)
+        for token in tokens
+    )
+
+    important_keys = {
+        normalize_key(value)
+        for value in [
+            main_keyword,
+            brand,
+            *features,
+        ]
+        if normalize_key(value)
+    }
+
+    keep: list[str] = []
+    remove: list[str] = []
+
+    for token in tokens:
+        key = normalize_key(token)
+
+        should_remove = (
+            contains_excluded(token, excluded_keys)
+            or any(
+                word in token
+                for word in (
+                    PROMOTION_WORDS
+                    | CLAIM_WORDS
+                )
+            )
+            or token_counts[key] > 1
+        )
+
+        if should_remove:
+            if token not in remove:
+                remove.append(token)
+            continue
+
+        if any(
+            key in important_key
+            or important_key in key
+            for important_key in important_keys
+        ):
+            if token not in keep:
+                keep.append(token)
+
+    current_key = normalize_key(current_title)
+    consider = [
+        item["term"]
+        for item in competitor_terms
+        if (
+            normalize_key(item["term"])
+            not in current_key
+            and not contains_excluded(
+                item["term"],
+                excluded_keys,
+            )
+        )
+    ][:5]
+
+    return {
+        "keep": keep,
+        "remove": remove,
+        "consider": consider,
+    }
 
 def compare_titles(
     current_title: str,
@@ -603,9 +973,7 @@ def recommend_product_names(
         resolved = resolve_existing_product(
             product_url
         )
-        current_title = resolved[
-            "current_title"
-        ]
+        current_title = resolved["current_title"]
 
         if not main_keyword:
             main_keyword = resolved[
@@ -622,10 +990,7 @@ def recommend_product_names(
             "메인 키워드를 입력해 주세요."
         )
 
-    if (
-        mode == "new"
-        and not product_type
-    ):
+    if mode == "new" and not product_type:
         product_type = main_keyword
 
     feature_values = split_features(
@@ -634,19 +999,72 @@ def recommend_product_names(
     required_values = split_features(
         required_words or []
     )
+    excluded_values = split_features(
+        excluded_words or []
+    )
     excluded_keys = {
         normalize_key(value)
-        for value in split_features(
-            excluded_words or []
-        )
+        for value in excluded_values
+        if normalize_key(value)
     }
 
-    started_warnings: list[str] = []
+    main_key = normalize_key(main_keyword)
+
+    if contains_excluded(
+        main_keyword,
+        excluded_keys,
+    ):
+        raise ProductNameRecommendationError(
+            "메인 키워드와 제외 단어가 충돌합니다."
+        )
+
+    conflicting_required = [
+        word
+        for word in required_values
+        if contains_excluded(
+            word,
+            excluded_keys,
+        )
+    ]
+
+    if conflicting_required:
+        raise ProductNameRecommendationError(
+            "필수 단어와 제외 단어가 충돌합니다: "
+            + ", ".join(conflicting_required)
+        )
+
+    def allowed(value: str) -> bool:
+        return (
+            bool(normalize_key(value))
+            and not contains_excluded(
+                value,
+                excluded_keys,
+            )
+        )
+
+    product_type = (
+        product_type
+        if allowed(product_type)
+        else main_keyword
+    )
+    brand = brand if allowed(brand) else ""
+    model_name = (
+        model_name
+        if allowed(model_name)
+        else ""
+    )
+    feature_values = [
+        value
+        for value in feature_values
+        if allowed(value)
+    ]
+
+    warnings: list[str] = []
 
     try:
         keyword_result = analyze_keywords(
             main_keyword,
-            related_limit=20,
+            related_limit=50,
         )
     except KeywordAnalysisError as error:
         raise ProductNameRecommendationError(
@@ -665,7 +1083,7 @@ def recommend_product_names(
         )
     except NaverShoppingError as error:
         market_top10 = []
-        started_warnings.append(str(error))
+        warnings.append(str(error))
 
     related_rows = sorted(
         keyword_result.get("keywords", []),
@@ -674,87 +1092,176 @@ def recommend_product_names(
         ),
         reverse=True,
     )
+    representative_category = (
+        keyword_result.get("summary", {}).get(
+            "representative_category",
+            "",
+        )
+    )
 
-    main_key = normalize_key(main_keyword)
     related_keywords: list[str] = []
+    related_seen: set[str] = set()
 
     for row in related_rows:
         keyword = normalize_text(
             row.get("keyword")
         )
         key = normalize_key(keyword)
+        category = normalize_text(
+            row.get("representative_category")
+        )
 
         if (
             not key
             or key == main_key
-            or key in excluded_keys
+            or key in related_seen
+            or not allowed(keyword)
         ):
             continue
 
-        if (
+        directly_related = (
             main_key in key
             or key in main_key
-        ):
-            related_keywords.append(keyword)
+        )
+        same_category = (
+            representative_category
+            and category
+            and category == representative_category
+        )
 
-        if len(related_keywords) >= 3:
+        if directly_related or same_category:
+            related_keywords.append(keyword)
+            related_seen.add(key)
+
+        if len(related_keywords) >= 8:
             break
 
-    concise_components = [
-        brand,
-        product_type or main_keyword,
-        *feature_values[:2],
-        model_name,
-        *required_values,
+    competitor_terms = [
+        item
+        for item in extract_competitor_terms(
+            market_top10=market_top10,
+            known_terms=[
+                main_keyword,
+                product_type,
+                *feature_values,
+                *required_values,
+                *related_keywords,
+            ],
+            brand=brand,
+        )
+        if allowed(item["term"])
     ]
-    balanced_components = [
-        brand,
-        product_type or main_keyword,
-        *feature_values[:4],
-        *related_keywords[:1],
-        model_name,
-        *required_values,
-    ]
-    expanded_components = [
-        brand,
-        product_type or main_keyword,
-        *feature_values[:6],
-        *related_keywords[:2],
-        model_name,
-        *required_values,
-    ]
+
+    market_terms: list[str] = []
+
+    for item in competitor_terms:
+        term = item["term"]
+        key = normalize_key(term)
+
+        if (
+            not allowed(term)
+            or key in main_key
+            or main_key in key
+            or key in normalize_key(product_type)
+        ):
+            continue
+
+        market_terms.append(term)
+
+        if len(market_terms) >= 5:
+            break
+
+    def make_title(
+        components: list[str],
+        max_length: int = MAX_RECOMMENDED_LENGTH,
+    ) -> tuple[str, list[str]]:
+        filtered = [
+            value
+            for value in components
+            if allowed(value)
+        ]
+        title = build_title(
+            filtered,
+            max_length=max_length,
+        )
+
+        missing = [
+            word
+            for word in required_values
+            if normalize_key(word)
+            not in normalize_key(title)
+        ]
+
+        for word in missing:
+            candidate = normalize_text(
+                f"{title} {word}"
+            )
+
+            if len(candidate) <= 100:
+                title = candidate
+
+        final_missing = [
+            word
+            for word in required_values
+            if normalize_key(word)
+            not in normalize_key(title)
+        ]
+
+        return title, final_missing
 
     raw_candidates = [
         (
             "간결형",
-            "핵심 상품정보를 짧고 명확하게 구성했습니다.",
-            concise_components,
+            [
+                brand,
+                product_type or main_keyword,
+                *required_values,
+                *feature_values[:2],
+                model_name,
+            ],
         ),
         (
             "균형형",
-            "검색 키워드와 제품 특징을 균형 있게 구성했습니다.",
-            balanced_components,
+            [
+                brand,
+                product_type or main_keyword,
+                *required_values,
+                *feature_values[:3],
+                *market_terms[:2],
+                *related_keywords[:1],
+                model_name,
+            ],
         ),
         (
             "확장형",
-            "관련 검색어와 제품 특징을 넓게 반영했습니다.",
-            expanded_components,
+            [
+                brand,
+                product_type or main_keyword,
+                *required_values,
+                *feature_values[:5],
+                *market_terms[:3],
+                *related_keywords[:2],
+                model_name,
+            ],
         ),
     ]
 
     candidates: list[dict[str, Any]] = []
     seen_titles: set[str] = set()
 
-    for style, reason, components in raw_candidates:
-        title = build_title(components)
+    for style, components in raw_candidates:
+        title, missing_required = make_title(
+            components
+        )
 
         if not title:
             continue
 
         if title in seen_titles:
-            title = build_title(
+            title, missing_required = make_title(
                 [
                     *components,
+                    *market_terms,
                     *related_keywords,
                 ],
                 max_length=55,
@@ -763,13 +1270,34 @@ def recommend_product_names(
         if title in seen_titles:
             continue
 
+        if contains_excluded(
+            title,
+            excluded_keys,
+        ):
+            continue
+
         seen_titles.add(title)
+
+        score, score_breakdown = score_candidate(
+            title=title,
+            main_keyword=main_keyword,
+            product_type=product_type,
+            brand=brand,
+            features=feature_values,
+            required_words=required_values,
+            keyword_rows=related_rows,
+            competitor_terms=competitor_terms,
+            representative_category=(
+                representative_category
+            ),
+        )
 
         used_keywords = [
             keyword
             for keyword in [
                 main_keyword,
                 *feature_values,
+                *market_terms,
                 *related_keywords,
                 *required_values,
             ]
@@ -779,24 +1307,45 @@ def recommend_product_names(
             )
         ]
 
+        candidate_warnings = policy_warnings(
+            title
+        )
+
+        if missing_required:
+            candidate_warnings.append(
+                "필수 단어가 누락되었습니다: "
+                + ", ".join(missing_required)
+            )
+
+        if style == "간결형":
+            reason = (
+                "메인 키워드와 핵심 제품정보를 "
+                "짧고 명확하게 구성했습니다."
+            )
+        elif style == "균형형":
+            reason = (
+                "검색량과 TOP 10 반복 단어, "
+                "제품 특징을 균형 있게 반영했습니다."
+            )
+        else:
+            reason = (
+                "실제 제품정보 범위에서 연관 검색어와 "
+                "경쟁 핵심 단어를 폭넓게 반영했습니다."
+            )
+
         candidates.append({
             "style": style,
             "title": title,
-            "score": candidate_score(
-                title,
-                main_keyword,
-                brand,
-                feature_values,
-            ),
+            "score": score,
+            "score_breakdown": score_breakdown,
             "length": len(title),
             "reason": reason,
             "used_keywords": list(
-                dict.fromkeys(
-                    used_keywords
-                )
+                dict.fromkeys(used_keywords)
             ),
-            "warnings": policy_warnings(
-                title
+            "warnings": candidate_warnings,
+            "missing_required_words": (
+                missing_required
             ),
             "changes": compare_titles(
                 current_title,
@@ -808,24 +1357,26 @@ def recommend_product_names(
             },
         })
 
+    style_priority = {
+        "균형형": 0,
+        "간결형": 1,
+        "확장형": 2,
+    }
     candidates.sort(
         key=lambda item: (
-            0 if item["style"] == "균형형" else 1,
+            style_priority.get(
+                item["style"],
+                9,
+            ),
             -item["score"],
         )
     )
 
     keyword_suggestions = [
         {
-            "keyword": row.get(
-                "keyword",
-                "",
-            ),
+            "keyword": row.get("keyword", ""),
             "total_volume": int(
-                row.get(
-                    "total_volume",
-                    0,
-                )
+                row.get("total_volume", 0)
             ),
             "competition": row.get(
                 "competition",
@@ -838,8 +1389,13 @@ def recommend_product_names(
                 )
             ),
         }
-        for row in related_rows[:10]
-    ]
+        for row in related_rows
+        if allowed(
+            normalize_text(
+                row.get("keyword", "")
+            )
+        )
+    ][:15]
 
     competitor_titles = [
         {
@@ -853,6 +1409,17 @@ def recommend_product_names(
         for item in market_top10
     ]
 
+    current_title_diagnosis = (
+        diagnose_current_title(
+            current_title=current_title,
+            main_keyword=main_keyword,
+            brand=brand,
+            features=feature_values,
+            excluded_keys=excluded_keys,
+            competitor_terms=competitor_terms,
+        )
+    )
+
     return {
         "mode": mode,
         "main_keyword": main_keyword,
@@ -862,23 +1429,21 @@ def recommend_product_names(
         "current_title": current_title,
         "product_url": product_url,
         "representative_category": (
-            keyword_result.get(
-                "summary",
-                {},
-            ).get(
-                "representative_category",
-                "",
-            )
+            representative_category
         ),
         "current_title_warnings": (
             policy_warnings(current_title)
             if current_title
             else []
         ),
+        "current_title_diagnosis": (
+            current_title_diagnosis
+        ),
         "keyword_suggestions": (
             keyword_suggestions
         ),
+        "competitor_terms": competitor_terms,
         "competitor_titles": competitor_titles,
         "candidates": candidates,
-        "warnings": started_warnings,
+        "warnings": warnings,
     }

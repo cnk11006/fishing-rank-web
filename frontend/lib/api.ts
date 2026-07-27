@@ -874,10 +874,20 @@ export type ProductNameCandidate = {
   style: "간결형" | "균형형" | "확장형";
   title: string;
   score: number;
+  score_breakdown: {
+    main_keyword: number;
+    product_relevance: number;
+    search_demand: number;
+    competitor_usage: number;
+    category_fit: number;
+    readability: number;
+    policy_compliance: number;
+  };
   length: number;
   reason: string;
   used_keywords: string[];
   warnings: string[];
+  missing_required_words: string[];
   changes: {
     kept: string[];
     added: string[];
@@ -895,7 +905,18 @@ export type ProductNameRecommendationResponse = {
   product_url: string;
   representative_category: string;
   current_title_warnings: string[];
+  current_title_diagnosis: {
+    keep: string[];
+    remove: string[];
+    consider: string[];
+  };
   keyword_suggestions: ProductNameKeywordSuggestion[];
+  competitor_terms: {
+    term: string;
+    product_count: number;
+    frequency: number;
+    recommendation: string;
+  }[];
   competitor_titles: {
     rank: number;
     title: string;

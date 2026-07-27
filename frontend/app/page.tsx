@@ -2862,6 +2862,33 @@ function ProductNameSeo() {
                   )}
                 </ul>
               )}
+
+              <div className="product-name-diagnosis">
+                {result.current_title_diagnosis.keep.length > 0 && (
+                  <div>
+                    <strong>유지 권장</strong>
+                    <span>
+                      {result.current_title_diagnosis.keep.join(", ")}
+                    </span>
+                  </div>
+                )}
+                {result.current_title_diagnosis.remove.length > 0 && (
+                  <div>
+                    <strong className="removed">삭제 권장</strong>
+                    <span>
+                      {result.current_title_diagnosis.remove.join(", ")}
+                    </span>
+                  </div>
+                )}
+                {result.current_title_diagnosis.consider.length > 0 && (
+                  <div>
+                    <strong className="added">추가 검토</strong>
+                    <span>
+                      {result.current_title_diagnosis.consider.join(", ")}
+                    </span>
+                  </div>
+                )}
+              </div>
             </section>
           )}
 
@@ -2914,6 +2941,37 @@ function ProductNameSeo() {
                       <span>
                         키워드{" "}
                         {candidate.used_keywords.length}개
+                      </span>
+                    </div>
+
+                    <div className="product-name-score-grid">
+                      <span>
+                        메인 키워드
+                        <strong>{candidate.score_breakdown.main_keyword}/25</strong>
+                      </span>
+                      <span>
+                        제품 적합성
+                        <strong>{candidate.score_breakdown.product_relevance}/20</strong>
+                      </span>
+                      <span>
+                        검색 수요
+                        <strong>{candidate.score_breakdown.search_demand}/15</strong>
+                      </span>
+                      <span>
+                        경쟁상품 반영
+                        <strong>{candidate.score_breakdown.competitor_usage}/15</strong>
+                      </span>
+                      <span>
+                        카테고리
+                        <strong>{candidate.score_breakdown.category_fit}/10</strong>
+                      </span>
+                      <span>
+                        가독성
+                        <strong>{candidate.score_breakdown.readability}/10</strong>
+                      </span>
+                      <span>
+                        기준 준수
+                        <strong>{candidate.score_breakdown.policy_compliance}/5</strong>
                       </span>
                     </div>
 
@@ -2992,6 +3050,33 @@ function ProductNameSeo() {
               )}
             </div>
           </section>
+
+          {result.competitor_terms.length > 0 && (
+            <section className="product-name-data-section">
+              <div>
+                <p className="eyebrow">
+                  TOP 10 WORD ANALYSIS
+                </p>
+                <h3>경쟁상품 핵심 단어</h3>
+                <p className="section-description">
+                  네이버 쇼핑 TOP 10 상품명에서 반복된 단어입니다.
+                  실제 제품에 해당하는 단어만 추천명에 반영됩니다.
+                </p>
+              </div>
+
+              <div className="product-name-market-terms">
+                {result.competitor_terms.map((item) => (
+                  <div key={item.term}>
+                    <strong>{item.term}</strong>
+                    <span>
+                      {item.product_count}개 상품 · {item.frequency}%
+                    </span>
+                    <em>{item.recommendation}</em>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           <section className="product-name-data-section">
             <div>
