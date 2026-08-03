@@ -294,10 +294,21 @@ def fetch_shopping_category(
         ) from last_error
 
     if response.status_code != 200:
-        raise KeywordAnalysisError(
-            f"네이버 쇼핑 API 오류 "
-            f"{response.status_code}"
+    try:
+        data = response.json()
+        message = (
+            data.get("errorMessage")
+            or data.get("message")
+            or str(data)
         )
+    except Exception:
+        message = response.text[:300]
+
+    raise KeywordAnalysisError(
+        "네이버 쇼핑 API 오류 "
+        f"{response.status_code}: {message} "
+        f"(요청주소: {response.url})"
+    )
 
     data = response.json()
     items = data.get("items", [])
